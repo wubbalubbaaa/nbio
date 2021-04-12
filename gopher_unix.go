@@ -104,9 +104,6 @@ func NewGopher(conf Config) *Gopher {
 	if conf.MaxLoad <= 0 {
 		conf.MaxLoad = DefaultMaxLoad
 	}
-	if len(conf.Addrs) > 0 {
-		conf.NListener = 1
-	}
 	if conf.NPoller <= 0 {
 		conf.NPoller = cpuNum
 	}
@@ -117,25 +114,42 @@ func NewGopher(conf Config) *Gopher {
 		conf.MinConnCacheSize = DefaultMinConnCacheSize
 	}
 
+	var epollMod int = 0
+	if conf.EPOLLMOD == EPOLLET {
+		epollMod = syscall.EPOLLET
+	}
+
+	conf.NListener = 1
+
 	g := &Gopher{
 		Name:               conf.Name,
 		network:            conf.Network,
 		addrs:              conf.Addrs,
 		maxLoad:            int64(conf.MaxLoad),
+		epollMod:           epollMod,
 		listenerNum:        conf.NListener,
 		pollerNum:          conf.NPoller,
 		readBufferSize:     conf.ReadBufferSize,
 		maxWriteBufferSize: conf.MaxWriteBufferSize,
 		minConnCacheSize:   conf.MinConnCacheSize,
-		listeners:          make([]*poller, conf.NListener),
-		pollers:            make([]*poller, conf.NPoller),
-		connsUnix:          make([]*Conn, MaxOpenFiles),
+
+		listeners: make([]*poller, conf.NListener),
+		pollers:   make([]*poller, conf.NPoller),
+		connsUnix: make([]*Conn, MaxOpenFiles),
 
 		trigger: time.NewTimer(timeForever),
 		chTimer: make(chan struct{}),
 	}
 
 	g.initHandlers()
+	if g.epollMod == syscall.EPOLLET {
+		g.OnReadBufferAlloc(func(c *Conn) []byte {
+			if c.ReadBuffer == nil {
+				c.ReadBuffer = make([]byte, int(g.readBufferSize))
+			}
+			return c.ReadBuffer
+		})
+	}
 
 	return g
 }

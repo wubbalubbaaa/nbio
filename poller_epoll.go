@@ -221,15 +221,15 @@ func (p *poller) stop() {
 }
 
 func (p *poller) addRead(fd int) error {
-	return syscall.EpollCtl(p.epfd, syscall.EPOLL_CTL_ADD, fd, &syscall.EpollEvent{Fd: int32(fd), Events: syscall.EPOLLRDHUP | syscall.EPOLLIN})
+	return syscall.EpollCtl(p.epfd, syscall.EPOLL_CTL_ADD, fd, &syscall.EpollEvent{Fd: int32(fd), Events: uint32(p.g.epollMod | syscall.EPOLLRDHUP | syscall.EPOLLIN)})
 }
 
 func (p *poller) addWrite(fd int) error {
-	return syscall.EpollCtl(p.epfd, syscall.EPOLL_CTL_ADD, fd, &syscall.EpollEvent{Fd: int32(fd), Events: syscall.EPOLLRDHUP | syscall.EPOLLOUT})
+	return syscall.EpollCtl(p.epfd, syscall.EPOLL_CTL_ADD, fd, &syscall.EpollEvent{Fd: int32(fd), Events: uint32(p.g.epollMod | syscall.EPOLLRDHUP | syscall.EPOLLOUT)})
 }
 
 func (p *poller) modWrite(fd int) error {
-	return syscall.EpollCtl(p.epfd, syscall.EPOLL_CTL_MOD, fd, &syscall.EpollEvent{Fd: int32(fd), Events: syscall.EPOLLRDHUP | syscall.EPOLLIN | syscall.EPOLLOUT})
+	return syscall.EpollCtl(p.epfd, syscall.EPOLL_CTL_MOD, fd, &syscall.EpollEvent{Fd: int32(fd), Events: uint32(p.g.epollMod | syscall.EPOLLRDHUP | syscall.EPOLLIN | syscall.EPOLLOUT)})
 }
 
 func (p *poller) deleteEvent(fd int) error {
@@ -244,22 +244,47 @@ func (p *poller) readWrite(ev *syscall.EpollEvent) {
 			c.closeWithError(io.EOF)
 			return
 		}
-		if ev.Events&syscall.EPOLLIN != 0 {
-			buffer := p.g.borrow(c)
-			b, err := p.g.onRead(c, buffer)
-			if err == nil {
-				p.g.onData(c, b)
-			} else {
-				if err != nil && err != syscall.EINTR && err != syscall.EAGAIN {
-					c.closeWithError(err)
-					return
-				}
-			}
-			p.g.payback(c, buffer)
-		}
 
 		if ev.Events&syscall.EPOLLOUT != 0 {
 			c.flush()
+		}
+
+		if ev.Events&syscall.EPOLLIN != 0 {
+			switch p.g.epollMod {
+			case syscall.EPOLLET:
+				p.g.executeRead(c.fd, func() {
+					for k := 0; true; k++ {
+						buffer := p.g.borrow(c)
+						b, err := p.g.onRead(c, buffer)
+						if err == nil {
+							p.g.onData(c, b)
+						} else {
+							if err != nil && err != syscall.EINTR && err != syscall.EAGAIN {
+								p.g.payback(c, buffer)
+								c.closeWithError(err)
+								return
+							}
+						}
+						p.g.payback(c, buffer)
+						if len(b) < len(buffer) {
+							return
+						}
+					}
+				})
+			default:
+				buffer := p.g.borrow(c)
+				b, err := p.g.onRead(c, buffer)
+				if err == nil {
+					p.g.onData(c, b)
+				} else {
+					if err != nil && err != syscall.EINTR && err != syscall.EAGAIN {
+						p.g.payback(c, buffer)
+						c.closeWithError(err)
+						return
+					}
+				}
+				p.g.payback(c, buffer)
+			}
 		}
 	} else {
 		syscall.Close(fd)

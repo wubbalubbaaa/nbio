@@ -80,6 +80,8 @@ type Config struct {
 	// more than MaxWriteBufferSize, the connection would be closed by nbio.
 	MaxWriteBufferSize int
 
+	EPOLLMOD uint32
+
 	// LockThread represents poller's goroutine to lock thread or not, it's set to false by default.
 	LockThread bool
 
@@ -153,6 +155,7 @@ func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(f 
 		conf.KeepaliveTime = DefaultKeepaliveTime
 	}
 
+	var readerExecutePool *taskpool.FixedPool
 	var messageHandlerExecutePool *taskpool.MixedPool
 	parserExecutor := func(index int, f func()) {
 		defer func() {
@@ -187,6 +190,7 @@ func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(f 
 		ReadBufferSize:     conf.ReadBufferSize,
 		MaxWriteBufferSize: conf.MaxWriteBufferSize,
 		LockThread:         conf.LockThread,
+		EPOLLMOD:           conf.EPOLLMOD,
 	}
 	g := nbio.NewGopher(gopherConf)
 
@@ -197,6 +201,10 @@ func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(f 
 		_onStop:                func() {},
 		ParserExecutor:         parserExecutor,
 		MessageHandlerExecutor: messageHandlerExecutor,
+	}
+	if conf.EPOLLMOD == nbio.EPOLLET {
+		readerExecutePool = taskpool.NewFixedPool(conf.NPoller, 1024)
+		svr.OnExecuteRead(readerExecutePool.GoByIndex)
 	}
 
 	g.OnOpen(func(c *nbio.Conn) {
@@ -242,6 +250,7 @@ func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(f 
 		svr._onStop()
 		messageHandlerExecutor = func(f func()) {}
 		parserExecutor = func(index int, f func()) {}
+		svr.OnExecuteRead(func(index int, f func()) {})
 		if messageHandlerExecutePool != nil {
 			messageHandlerExecutePool.Stop()
 		}
@@ -273,6 +282,7 @@ func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func
 		conf.ReadBufferSize = nbio.DefaultReadBufferSize
 	}
 
+	var readerExecutePool *taskpool.FixedPool
 	var messageHandlerExecutePool *taskpool.MixedPool
 	parserExecutor := func(index int, f func()) {
 		defer func() {
@@ -319,6 +329,7 @@ func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func
 		ReadBufferSize:     conf.ReadBufferSize,
 		MaxWriteBufferSize: conf.MaxWriteBufferSize,
 		LockThread:         conf.LockThread,
+		EPOLLMOD:           conf.EPOLLMOD,
 	}
 	g := nbio.NewGopher(gopherConf)
 
@@ -329,6 +340,10 @@ func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func
 		_onStop:                func() {},
 		ParserExecutor:         parserExecutor,
 		MessageHandlerExecutor: messageHandlerExecutor,
+	}
+	if conf.EPOLLMOD == nbio.EPOLLET {
+		readerExecutePool = taskpool.NewFixedPool(conf.NPoller, 1024)
+		svr.OnExecuteRead(readerExecutePool.GoByIndex)
 	}
 
 	isClient := false
@@ -393,6 +408,7 @@ func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func
 		svr._onStop()
 		messageHandlerExecutor = func(f func()) {}
 		parserExecutor = func(index int, f func()) {}
+		svr.OnExecuteRead(func(index int, f func()) {})
 		if messageHandlerExecutePool != nil {
 			messageHandlerExecutePool.Stop()
 		}

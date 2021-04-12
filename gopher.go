@@ -17,6 +17,11 @@ import (
 )
 
 const (
+	EPOLLLT = 0
+	EPOLLET = 1
+)
+
+const (
 	// DefaultMaxLoad .
 	DefaultMaxLoad = 1024 * 100
 
@@ -69,6 +74,8 @@ type Config struct {
 	// more than MaxWriteBufferSize, the connection would be closed by nbio.
 	MaxWriteBufferSize int
 
+	EPOLLMOD uint32
+
 	// LockThread represents poller's goroutine to lock thread or not, it's set to false by default.
 	LockThread bool
 }
@@ -103,6 +110,7 @@ type Gopher struct {
 	network            string
 	addrs              []string
 	listenerNum        int
+	epollMod           int
 	pollerNum          int
 	readBufferSize     int
 	maxWriteBufferSize int
@@ -125,11 +133,12 @@ type Gopher struct {
 	onData            func(c *Conn, data []byte)
 	onReadBufferAlloc func(c *Conn) []byte
 	onReadBufferFree  func(c *Conn, buffer []byte)
-	onWriteBufferFree       func(c *Conn, buffer []byte)
+	onWriteBufferFree func(c *Conn, buffer []byte)
 	beforeRead        func(c *Conn)
 	afterRead         func(c *Conn)
 	beforeWrite       func(c *Conn)
 	onStop            func()
+	executeRead       func(index int, f func())
 
 	timers  timerHeap
 	trigger *time.Timer
@@ -208,6 +217,10 @@ func (g *Gopher) OnRead(h func(c *Conn, b []byte) ([]byte, error)) {
 		panic("invalid nil handler")
 	}
 	g.onRead = h
+}
+
+func (g *Gopher) OnExecuteRead(h func(index int, f func())) {
+	g.executeRead = h
 }
 
 // OnData registers callback for data
@@ -420,6 +433,9 @@ func (g *Gopher) initHandlers() {
 			return nil, err
 		}
 		return b[:n], err
+	})
+	g.OnExecuteRead(func(index int, f func()) {
+		f()
 	})
 	g.OnData(func(c *Conn, data []byte) {})
 	g.OnReadBufferAlloc(g.PollerBuffer)

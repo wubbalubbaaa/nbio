@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/julienschmidt/httprouter"
+	"github.com/lesismal/nbio"
 	"github.com/lesismal/nbio/nbhttp"
 )
 
@@ -38,10 +39,11 @@ func main() {
 	router := httprouter.New()
 	router.POST("/echo", onEcho)
 	svr := nbhttp.NewServer(nbhttp.Config{
-		Network: "tcp",
-		Addrs:   addrs,
-		MaxLoad: 1000000,
-		NPoller: runtime.NumCPU() * 2,
+		Network:  "tcp",
+		Addrs:    addrs,
+		MaxLoad:  1000000,
+		NPoller:  runtime.NumCPU() * 2,
+		EPOLLMOD: nbio.EPOLLET,
 	}, router, nil)
 
 	err := svr.Start()
