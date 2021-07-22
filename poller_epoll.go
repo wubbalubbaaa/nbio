@@ -143,12 +143,52 @@ func (p *poller) readWriteLoop() {
 		}
 		msec = 20
 
-		for i := 0; i < n; i++ {
+		// for i := 0; i < n; i++ {
+		for _, ev := range events[:n] {
 			fd = int(events[i].Fd)
 			switch fd {
 			case p.evtfd:
 			default:
-				p.readWrite(&events[i])
+				c := p.getConn(fd)
+				if c != nil {
+					if ev.Events&epoollEventsError != 0 {
+						c.closeWithError(io.EOF)
+						continue
+					}
+
+					if ev.Events&epoollEventsWrite != 0 {
+						c.flush()
+					}
+
+					if ev.Events&epoollEventsRead != 0 {
+						if p.g.epollMod == syscall.EPOLLET && p.g.onRead != nil {
+							p.g.onRead(c)
+							continue
+						}
+
+						for i := 0; i < p.g.maxReadTimesPerEventLoop; i++ {
+							buffer := p.g.borrow(c)
+							n, err := c.Read(buffer)
+							if n > 0 {
+								p.g.onData(c, buffer[:n])
+							}
+							p.g.payback(c, buffer)
+							if err == syscall.EINTR {
+								continue
+							}
+							if err == syscall.EAGAIN {
+								break
+							}
+							if err != nil || n == 0 {
+								c.closeWithError(err)
+							}
+							break
+						}
+					}
+				} else {
+					syscall.Close(fd)
+					p.deleteEvent(fd)
+				}
 			}
 		}
 	}
@@ -166,7 +206,8 @@ func (p *poller) stop() {
 }
 
 func (p *poller) addRead(fd int) error {
-	return syscall.EpollCtl(p.epfd, syscall.EPOLL_CTL_ADD, fd, &syscall.EpollEvent{Fd: int32(fd), Events: epoollEventsRead})
+	// return syscall.EpollCtl(p.epfd, syscall.EPOLL_CTL_ADD, fd, &syscall.EpollEvent{Fd: int32(fd), Events: epoollEventsRead})
+	return syscall.EpollCtl(p.epfd, syscall.EPOLL_CTL_ADD, fd, &syscall.EpollEvent{Fd: int32(fd), Events: uint32(epoollEventsRead | p.g.epollMod)})
 }
 
 // func (p *poller) addWrite(fd int) error {
@@ -174,51 +215,52 @@ func (p *poller) addRead(fd int) error {
 // }
 
 func (p *poller) modWrite(fd int) error {
-	return syscall.EpollCtl(p.epfd, syscall.EPOLL_CTL_MOD, fd, &syscall.EpollEvent{Fd: int32(fd), Events: epoollEventsReadWrite})
+	// return syscall.EpollCtl(p.epfd, syscall.EPOLL_CTL_MOD, fd, &syscall.EpollEvent{Fd: int32(fd), Events: epoollEventsReadWrite})
+	return syscall.EpollCtl(p.epfd, syscall.EPOLL_CTL_ADD, fd, &syscall.EpollEvent{Fd: int32(fd), Events: uint32(epoollEventsReadWrite | p.g.epollMod)})
 }
 
 func (p *poller) deleteEvent(fd int) error {
 	return syscall.EpollCtl(p.epfd, syscall.EPOLL_CTL_DEL, fd, &syscall.EpollEvent{Fd: int32(fd)})
 }
 
-func (p *poller) readWrite(ev *syscall.EpollEvent) {
-	fd := int(ev.Fd)
-	c := p.getConn(fd)
-	if c != nil {
-		if ev.Events&epoollEventsError != 0 {
-			c.closeWithError(io.EOF)
-			return
-		}
+// func (p *poller) readWrite(ev *syscall.EpollEvent) {
+// 	fd := int(ev.Fd)
+// 	c := p.getConn(fd)
+// 	if c != nil {
+// 		if ev.Events&epoollEventsError != 0 {
+// 			c.closeWithError(io.EOF)
+// 			return
+// 		}
 
-		if ev.Events&epoollEventsWrite != 0 {
-			c.flush()
-		}
+// 		if ev.Events&epoollEventsWrite != 0 {
+// 			c.flush()
+// 		}
 
-		if ev.Events&epoollEventsRead != 0 {
-			for i := 0; i < p.g.maxReadTimesPerEventLoop; i++ {
-				buffer := p.g.borrow(c)
-				n, err := c.Read(buffer)
-				if n > 0 {
-					p.g.onData(c, buffer[:n])
-				}
-				p.g.payback(c, buffer)
-				if err == syscall.EINTR {
-					continue
-				}
-				if err == syscall.EAGAIN {
-					return
-				}
-				if err != nil || n == 0 {
-					c.closeWithError(err)
-				}
-				return
-			}
-		}
-	} else {
-		syscall.Close(fd)
-		p.deleteEvent(fd)
-	}
-}
+// 		if ev.Events&epoollEventsRead != 0 {
+// 			for i := 0; i < p.g.maxReadTimesPerEventLoop; i++ {
+// 				buffer := p.g.borrow(c)
+// 				n, err := c.Read(buffer)
+// 				if n > 0 {
+// 					p.g.onData(c, buffer[:n])
+// 				}
+// 				p.g.payback(c, buffer)
+// 				if err == syscall.EINTR {
+// 					continue
+// 				}
+// 				if err == syscall.EAGAIN {
+// 					return
+// 				}
+// 				if err != nil || n == 0 {
+// 					c.closeWithError(err)
+// 				}
+// 				return
+// 			}
+// 		}
+// 	} else {
+// 		syscall.Close(fd)
+// 		p.deleteEvent(fd)
+// 	}
+// }
 
 func newPoller(g *Gopher, isListener bool, index int) (*poller, error) {
 	if isListener {

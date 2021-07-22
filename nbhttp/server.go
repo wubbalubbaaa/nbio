@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"runtime"
 	"sync"
+	"syscall"
 	"time"
 	"unicode/utf8"
 	"unsafe"
@@ -113,6 +114,8 @@ type Config struct {
 
 	// MaxReadTimesPerEventLoop represents max read times in one poller loop for one fd
 	MaxReadTimesPerEventLoop int
+
+	EPOLLMOD uint32
 }
 
 // Server .
@@ -244,6 +247,14 @@ func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(in
 	if conf.MaxWebsocketFramePayloadSize <= 0 {
 		conf.MaxWebsocketFramePayloadSize = DefaultMaxWebsocketFramePayloadSize
 	}
+	conf.EPOLLMOD = nbio.EPOLLET
+
+	getReadBuffer := func(c *nbio.Conn) []byte {
+		return mempool.Malloc(conf.ReadBufferSize)
+	}
+	releaseReadBuffer := func(buf []byte) {
+		mempool.Free(buf)
+	}
 
 	var messageHandlerExecutePool *taskpool.MixedPool
 	if messageHandlerExecutor == nil {
@@ -270,6 +281,7 @@ func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(in
 		MaxReadTimesPerEventLoop: conf.MaxReadTimesPerEventLoop,
 		LockPoller:               conf.LockPoller,
 		LockListener:             conf.LockListener,
+		EPOLLMOD:                 conf.EPOLLMOD,
 	}
 	g := nbio.NewGopher(gopherConf)
 
@@ -314,7 +326,7 @@ func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(in
 		delete(svr.conns, c)
 		svr.mux.Unlock()
 	})
-	g.OnData(func(c *nbio.Conn, data []byte) {
+	g.OnRead(func(c *nbio.Conn) {
 		defer func() {
 			if err := recover(); err != nil {
 				const size = 64 << 10
@@ -327,16 +339,60 @@ func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(in
 		parser := c.Session().(*Parser)
 		if parser == nil {
 			logging.Error("nil parser")
+			c.Close()
 			return
 		}
-
-		err := parser.Read(data)
-		if err != nil {
-			logging.Debug("parser.Read failed: %v", err)
-			c.CloseWithError(err)
-		}
-		// c.SetReadDeadline(time.Now().Add(conf.KeepaliveTime))
+		messageHandlerExecutor(c.Hash(), func() {
+			buffer := getReadBuffer(c)
+			defer releaseReadBuffer(buffer)
+			for {
+				nread, err := c.Read(buffer)
+				if err == syscall.EINTR {
+					continue
+				}
+				if err == syscall.EAGAIN {
+					return
+				}
+				if err != nil {
+					c.CloseWithError(err)
+					return
+				}
+				if nread > 0 {
+					err = parser.Read(buffer[:nread])
+					if err != nil {
+						logging.Debug("parser.Read failed: %v", err)
+						c.CloseWithError(err)
+						return
+					}
+				} else {
+					return
+				}
+			}
+		})
 	})
+	// g.OnData(func(c *nbio.Conn, data []byte) {
+	// 	defer func() {
+	// 		if err := recover(); err != nil {
+	// 			const size = 64 << 10
+	// 			buf := make([]byte, size)
+	// 			buf = buf[:runtime.Stack(buf, false)]
+	// 			logging.Error("execute parser failed: %v\n%v\n", err, *(*string)(unsafe.Pointer(&buf)))
+	// 		}
+	// 	}()
+
+	// 	parser := c.Session().(*Parser)
+	// 	if parser == nil {
+	// 		logging.Error("nil parser")
+	// 		return
+	// 	}
+
+	// 	err := parser.Read(data)
+	// 	if err != nil {
+	// 		logging.Debug("parser.Read failed: %v", err)
+	// 		c.CloseWithError(err)
+	// 	}
+	// 	// c.SetReadDeadline(time.Now().Add(conf.KeepaliveTime))
+	// })
 
 	g.OnWriteBufferRelease(func(c *nbio.Conn, buffer []byte) {
 		mempool.Free(buffer)
@@ -376,18 +432,25 @@ func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func
 		conf.MaxWebsocketFramePayloadSize = DefaultMaxWebsocketFramePayloadSize
 	}
 	conf.EnableSendfile = false
+	conf.EPOLLMOD = nbio.EPOLLET
 
-	buffers := make([][]byte, conf.NParser)
-	for i := 0; i < len(buffers); i++ {
-		buffers[i] = make([]byte, conf.ReadBufferSize)
+	// buffers := make([][]byte, conf.NParser)
+	// for i := 0; i < len(buffers); i++ {
+	// 	buffers[i] = make([]byte, conf.ReadBufferSize)
+	// }
+	getReadBuffer := func(c *nbio.Conn) []byte {
+		return mempool.Malloc(conf.ReadBufferSize)
 	}
-	getBuffer := func(c *nbio.Conn) []byte {
-		return buffers[uint64(c.Hash())%uint64(conf.NParser)]
+	releaseReadBuffer := func(buf []byte) {
+		mempool.Free(buf)
 	}
+	// getReadBuffer := func(c *nbio.Conn) []byte {
+	// 	return buffers[uint64(c.Hash())%uint64(conf.NParser)]
+	// }
 	if runtime.GOOS == "windows" {
 		bufferMux := sync.Mutex{}
 		buffers := map[*nbio.Conn][]byte{}
-		getBuffer = func(c *nbio.Conn) []byte {
+		getReadBuffer = func(c *nbio.Conn) []byte {
 			bufferMux.Lock()
 			defer bufferMux.Unlock()
 			buf, ok := buffers[c]
@@ -396,6 +459,8 @@ func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func
 				buffers[c] = buf
 			}
 			return buf
+		}
+		releaseReadBuffer = func(buf []byte) {
 		}
 	}
 
@@ -435,6 +500,7 @@ func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func
 		MaxReadTimesPerEventLoop: conf.MaxReadTimesPerEventLoop,
 		LockPoller:               conf.LockPoller,
 		LockListener:             conf.LockListener,
+		EPOLLMOD:                 conf.EPOLLMOD,
 	}
 	g := nbio.NewGopher(gopherConf)
 
@@ -486,7 +552,7 @@ func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func
 		svr.mux.Unlock()
 	})
 
-	g.OnData(func(c *nbio.Conn, data []byte) {
+	g.OnRead(func(c *nbio.Conn) {
 		defer func() {
 			if err := recover(); err != nil {
 				const size = 64 << 10
@@ -502,30 +568,92 @@ func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func
 			c.Close()
 			return
 		}
-		if tlsConn, ok := parser.Processor.Conn().(*tls.Conn); ok {
-			buffer := getBuffer(c)
-			for {
-				_, nread, err := tlsConn.AppendAndRead(data, buffer)
-				data = nil
-				if err != nil {
-					c.CloseWithError(err)
-					return
-				}
-				if nread > 0 {
-					err := parser.Read(buffer[:nread])
+		tlsConn, ok := parser.Processor.Conn().(*tls.Conn)
+		if ok {
+			messageHandlerExecutor(c.Hash(), func() {
+				buffer := getReadBuffer(c)
+				defer releaseReadBuffer(buffer)
+				for {
+					nread, err := c.Read(buffer)
+					if err == syscall.EINTR {
+						continue
+					}
+					if err == syscall.EAGAIN {
+						return
+					}
 					if err != nil {
-						logging.Debug("parser.Read failed: %v", err)
 						c.CloseWithError(err)
 						return
 					}
+					if nread > 0 {
+						data := buffer[:nread]
+						for {
+							_, nread, err = tlsConn.AppendAndRead(data, buffer)
+							data = nil
+							if err != nil {
+								c.CloseWithError(err)
+								return
+							}
+							if nread > 0 {
+								err := parser.Read(buffer[:nread])
+								if err != nil {
+									logging.Debug("parser.Read failed: %v", err)
+									c.CloseWithError(err)
+									return
+								}
+							}
+							if nread == 0 {
+								break
+							}
+						}
+					} else {
+						return
+					}
 				}
-				if nread == 0 {
-					return
-				}
-			}
+			})
 			// c.SetReadDeadline(time.Now().Add(conf.KeepaliveTime))
 		}
 	})
+	// g.OnData(func(c *nbio.Conn, data []byte) {
+	// 	defer func() {
+	// 		if err := recover(); err != nil {
+	// 			const size = 64 << 10
+	// 			buf := make([]byte, size)
+	// 			buf = buf[:runtime.Stack(buf, false)]
+	// 			logging.Error("execute parser failed: %v\n%v\n", err, *(*string)(unsafe.Pointer(&buf)))
+	// 		}
+	// 	}()
+
+	// 	parser := c.Session().(*Parser)
+	// 	if parser == nil {
+	// 		logging.Error("nil parser")
+	// 		c.Close()
+	// 		return
+	// 	}
+	// 	if tlsConn, ok := parser.Processor.Conn().(*tls.Conn); ok {
+	// 		buffer := getReadBuffer(c)
+	// 		for {
+	// 			_, nread, err := tlsConn.AppendAndRead(data, buffer)
+	// 			data = nil
+	// 			if err != nil {
+	// 				c.CloseWithError(err)
+	// 				return
+	// 			}
+	// 			if nread > 0 {
+	// 				err := parser.Read(buffer[:nread])
+	// 				if err != nil {
+	// 					logging.Debug("parser.Read failed: %v", err)
+	// 					c.CloseWithError(err)
+	// 					return
+	// 				}
+	// 			}
+	// 			if nread == 0 {
+	// 				return
+	// 			}
+	// 		}
+	// 		// c.SetReadDeadline(time.Now().Add(conf.KeepaliveTime))
+	// 	}
+	// })
 	g.OnWriteBufferRelease(func(c *nbio.Conn, buffer []byte) {
 		mempool.Free(buffer)
 	})
