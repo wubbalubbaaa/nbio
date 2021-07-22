@@ -145,7 +145,7 @@ func (p *poller) readWriteLoop() {
 
 		// for i := 0; i < n; i++ {
 		for _, ev := range events[:n] {
-			fd = int(events[i].Fd)
+			fd = int(ev.Fd)
 			switch fd {
 			case p.evtfd:
 			default:
