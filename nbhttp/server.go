@@ -238,9 +238,9 @@ func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(in
 	if conf.ReadLimit <= 0 {
 		conf.ReadLimit = DefaultHTTPReadLimit
 	}
-	if conf.KeepaliveTime <= 0 {
-		conf.KeepaliveTime = DefaultKeepaliveTime
-	}
+	// if conf.KeepaliveTime <= 0 {
+	// 	conf.KeepaliveTime = DefaultKeepaliveTime
+	// }
 	if conf.ReadBufferSize <= 0 {
 		conf.ReadBufferSize = nbio.DefaultReadBufferSize
 	}
@@ -313,7 +313,9 @@ func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(in
 		parser.Server = svr
 		processor.(*ServerProcessor).parser = parser
 		c.SetSession(parser)
-		c.SetReadDeadline(time.Now().Add(conf.KeepaliveTime))
+		if conf.KeepaliveTime > 0 {
+			c.SetReadDeadline(time.Now().Add(conf.KeepaliveTime))
+		}
 	})
 	g.OnClose(func(c *nbio.Conn, err error) {
 		parser := c.Session().(*Parser)
@@ -422,9 +424,9 @@ func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func
 	if conf.ReadLimit <= 0 {
 		conf.ReadLimit = DefaultHTTPReadLimit
 	}
-	if conf.KeepaliveTime <= 0 {
-		conf.KeepaliveTime = DefaultKeepaliveTime
-	}
+	// if conf.KeepaliveTime <= 0 {
+	// 	conf.KeepaliveTime = DefaultKeepaliveTime
+	// }
 	if conf.ReadBufferSize <= 0 {
 		conf.ReadBufferSize = nbio.DefaultReadBufferSize
 	}
@@ -536,7 +538,9 @@ func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func
 		parser.Server = svr
 		processor.(*ServerProcessor).parser = parser
 		c.SetSession(parser)
-		c.SetReadDeadline(time.Now().Add(conf.KeepaliveTime))
+		if conf.KeepaliveTime > 0 {
+			c.SetReadDeadline(time.Now().Add(conf.KeepaliveTime))
+		}
 	})
 	g.OnClose(func(c *nbio.Conn, err error) {
 		parser := c.Session().(*Parser)
