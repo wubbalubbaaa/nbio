@@ -17,6 +17,13 @@ import (
 
 // Response represents the server side of an HTTP response.
 type Response struct {
+	response
+	header       http.Header
+	trailer      map[string]string
+	intFormatBuf [10]byte
+}
+
+type response struct {
 	parser *Parser
 
 	request *http.Request // request for this response
@@ -24,12 +31,9 @@ type Response struct {
 	status     string
 	statusCode int // status code passed to WriteHeader
 
-	header      http.Header
-	trailer     map[string]string
 	trailerSize int
 
-	buffer       []byte
-	intFormatBuf [10]byte
+	buffer []byte
 
 	chunked        bool
 	chunkChecked   bool
@@ -356,7 +360,7 @@ func NewResponse(parser *Parser, request *http.Request, enableSendfile bool) *Re
 	res := responsePool.Get().(*Response)
 	res.parser = parser
 	res.request = request
-	res.header = http.Header{"Server": []string{"nbio"}}
+	res.header["Server"] = []string{"nbio"}
 	res.enableSendfile = enableSendfile
 	return res
 }

@@ -20,7 +20,7 @@ import (
 
 var (
 	emptyRequest  = http.Request{}
-	emptyResponse = Response{}
+	emptyResponse = response{}
 
 	requestPool = sync.Pool{
 		New: func() interface{} {
@@ -30,7 +30,9 @@ var (
 
 	responsePool = sync.Pool{
 		New: func() interface{} {
-			return &Response{}
+			return &Response{
+				header: http.Header{},
+			}
 		},
 	}
 
@@ -44,18 +46,46 @@ var (
 func releaseRequest(req *http.Request) {
 	if req != nil {
 		if req.Body != nil {
-			br := req.Body.(*BodyReader)
-			br.close()
-			bodyReaderPool.Put(br)
+			req.Body.Close()
+			bodyReaderPool.Put(req.Body)
 		}
-		*req = emptyRequest
+		// *req = emptyRequest
+		req.Method = ""
+		req.URL = nil
+		req.Proto = ""
+		req.ProtoMajor = 0
+		req.ProtoMinor = 0
+		for k := range req.Header {
+			delete(req.Header, k)
+		}
+		req.ContentLength = 0
+		req.TransferEncoding = req.TransferEncoding[0:0]
+		req.Host = ""
+		for k := range req.Form {
+			delete(req.Form, k)
+		}
+		for k := range req.PostForm {
+			delete(req.PostForm, k)
+		}
+		req.MultipartForm = nil
+		for k := range req.Trailer {
+			delete(req.Trailer, k)
+		}
+		req.RemoteAddr = ""
+		req.RequestURI = ""
 		requestPool.Put(req)
 	}
 }
 
 func releaseResponse(res *Response) {
 	if res != nil {
-		*res = emptyResponse
+		for k := range res.header {
+			delete(res.header, k)
+		}
+		for k := range res.trailer {
+			delete(res.trailer, k)
+		}
+		res.response = emptyResponse
 		responsePool.Put(res)
 	}
 }
@@ -91,6 +121,8 @@ type ServerProcessor struct {
 	keepaliveTime  time.Duration
 	enableSendfile bool
 	// isUpgrade      bool
+
+	remoteAddr string
 }
 
 // Conn .
@@ -184,7 +216,7 @@ func (p *ServerProcessor) OnComplete(parser *Parser) {
 	}
 
 	if p.conn != nil {
-		request.RemoteAddr = p.conn.RemoteAddr().String()
+		request.RemoteAddr = p.remoteAddr
 	}
 
 	if request.URL.Host == "" {
@@ -351,6 +383,7 @@ func NewServerProcessor(conn net.Conn, handler http.Handler, executor func(index
 	p.executor = executor
 	p.keepaliveTime = keepaliveTime
 	p.enableSendfile = enableSendfile
+	p.remoteAddr = conn.RemoteAddr().String()
 	return p
 }
 

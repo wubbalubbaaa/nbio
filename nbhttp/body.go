@@ -76,10 +76,6 @@ func (br *BodyReader) TakeOver() []byte {
 
 // Close implements io. Closer
 func (br *BodyReader) Close() error {
-	return nil
-}
-
-func (br *BodyReader) close() error {
 	if br.buffer != nil {
 		mempool.Free(br.buffer)
 		br.buffer = nil

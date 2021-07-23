@@ -47,8 +47,8 @@ type Parser struct {
 	chunked       bool
 	headerExists  bool
 
-	state    int8
 	isClient bool
+	state    int8
 
 	readLimit     int
 	minBufferSize int
