@@ -29,7 +29,7 @@ func onEcho(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	go func() {
-		if err := http.ListenAndServe(":6060", nil); err != nil {
+		if err := http.ListenAndServe("localhost:6060", nil); err != nil {
 			panic(err)
 		}
 	}()
