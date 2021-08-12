@@ -64,15 +64,15 @@ func (p *poller) deleteConn(c *Conn) {
 	p.g.onClose(c, c.closeErr)
 }
 
-func (p *poller) trigger() {
-	syscall.Kevent(p.kfd, []syscall.Kevent_t{{Ident: 0, Filter: syscall.EVFILT_USER, Fflags: syscall.NOTE_TRIGGER}}, nil, nil)
+func (p *poller) trigger() error {
+	return syscall.Kevent(p.kfd, []syscall.Kevent_t{{Ident: 0, Filter: syscall.EVFILT_USER, Fflags: syscall.NOTE_TRIGGER}}, nil, nil)
 }
 
 func (p *poller) triggerClose(c *Conn) error {
 	p.mux.Lock()
 	p.closing = append(p.closing, c)
 	p.mux.Unlock()
-	p.trigger()
+	return p.trigger()
 }
 
 func (p *poller) addRead(fd int) {

@@ -179,16 +179,16 @@ func (p *poller) stop() {
 	}
 }
 
-func (p *poller) trigger() {
+func (p *poller) trigger() error {
 	n := uint64(1)
-	syscall.Write(p.evtfd, (*(*[8]byte)(unsafe.Pointer(&n)))[:])
+	return syscall.Write(p.evtfd, (*(*[8]byte)(unsafe.Pointer(&n)))[:])
 }
 
 func (p *poller) triggerClose(c *Conn) error {
 	p.mux.Lock()
 	p.closing = append(p.closing, c)
 	p.mux.Unlock()
-	p.trigger()
+	return p.trigger()
 }
 
 func (p *poller) addRead(fd int) error {
