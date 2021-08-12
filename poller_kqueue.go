@@ -65,7 +65,7 @@ func (p *poller) deleteConn(c *Conn) {
 }
 
 func (p *poller) trigger() error {
-	return syscall.Kevent(p.kfd, []syscall.Kevent_t{{Ident: 0, Filter: syscall.EVFILT_USER, Fflags: syscall.NOTE_TRIGGER}}, nil, nil)
+	_, err := syscall.Kevent(p.kfd, []syscall.Kevent_t{{Ident: 0, Filter: syscall.EVFILT_USER, Fflags: syscall.NOTE_TRIGGER}}, nil, nil)
 }
 
 func (p *poller) triggerClose(c *Conn) error {

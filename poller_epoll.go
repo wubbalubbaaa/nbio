@@ -181,7 +181,8 @@ func (p *poller) stop() {
 
 func (p *poller) trigger() error {
 	n := uint64(1)
-	return syscall.Write(p.evtfd, (*(*[8]byte)(unsafe.Pointer(&n)))[:])
+	_, err := syscall.Write(p.evtfd, (*(*[8]byte)(unsafe.Pointer(&n)))[:])
+	return err
 }
 
 func (p *poller) triggerClose(c *Conn) error {
