@@ -41,6 +41,8 @@ type Conn struct {
 	session interface{}
 
 	chWaitWrite chan struct{}
+
+	execList []func()
 }
 
 // Lock .
@@ -157,12 +159,13 @@ func (c *Conn) Writev(in [][]byte) (int, error) {
 
 // Close implements Close
 func (c *Conn) Close() error {
-	return c.closeWithError(nil)
+	return c.g.pollers[c.Hash()%len(c.g.pollers)].triggerClose(c)
 }
 
 // CloseWithError .
 func (c *Conn) CloseWithError(err error) error {
-	return c.closeWithError(err)
+	c.closeErr = err
+	return c.g.pollers[c.Hash()%len(c.g.pollers)].triggerClose(c)
 }
 
 // LocalAddr implements LocalAddr
@@ -182,12 +185,12 @@ func (c *Conn) SetDeadline(t time.Time) error {
 		if !t.IsZero() {
 			now := time.Now()
 			if c.rTimer == nil {
-				c.rTimer = c.g.afterFunc(t.Sub(now), func() { c.closeWithError(errReadTimeout) })
+				c.rTimer = c.g.afterFunc(t.Sub(now), func() { c.CloseWithError(errReadTimeout) })
 			} else {
 				c.rTimer.Reset(t.Sub(now))
 			}
 			if c.wTimer == nil {
-				c.wTimer = c.g.afterFunc(t.Sub(now), func() { c.closeWithError(errWriteTimeout) })
+				c.wTimer = c.g.afterFunc(t.Sub(now), func() { c.CloseWithError(errWriteTimeout) })
 			} else {
 				c.wTimer.Reset(t.Sub(now))
 			}
@@ -213,7 +216,7 @@ func (c *Conn) SetReadDeadline(t time.Time) error {
 		if !t.IsZero() {
 			now := time.Now()
 			if c.rTimer == nil {
-				c.rTimer = c.g.afterFunc(t.Sub(now), func() { c.closeWithError(errReadTimeout) })
+				c.rTimer = c.g.afterFunc(t.Sub(now), func() { c.CloseWithError(errReadTimeout) })
 			} else {
 				c.rTimer.Reset(t.Sub(now))
 			}
@@ -233,7 +236,7 @@ func (c *Conn) SetWriteDeadline(t time.Time) error {
 		if !t.IsZero() {
 			now := time.Now()
 			if c.wTimer == nil {
-				c.wTimer = c.g.afterFunc(t.Sub(now), func() { c.closeWithError(errWriteTimeout) })
+				c.wTimer = c.g.afterFunc(t.Sub(now), func() { c.CloseWithError(errWriteTimeout) })
 			} else {
 				c.wTimer.Reset(t.Sub(now))
 			}
@@ -451,7 +454,9 @@ func (c *Conn) closeWithError(err error) error {
 }
 
 func (c *Conn) closeWithErrorWithoutLock(err error) error {
-	c.closeErr = err
+	if err != nil {
+		c.closeErr = err
+	}
 
 	if c.wTimer != nil {
 		c.wTimer.Stop()

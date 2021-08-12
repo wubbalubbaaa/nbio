@@ -84,8 +84,8 @@ func (c *Conn) Sendfile(f *os.File, remain int64) (int64, error) {
 			continue
 		}
 		if err != nil {
-			c.closeWithErrorWithoutLock(err)
 			c.mux.Unlock()
+			c.CloseWithError(err)
 			return total - remain, err
 		}
 	}

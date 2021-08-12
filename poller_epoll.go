@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"runtime"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -40,6 +41,9 @@ type poller struct {
 	ReadBuffer []byte
 
 	pollType string
+
+	mux     sync.Mutex
+	closing []*Conn
 }
 
 func (p *poller) addConn(c *Conn) {
@@ -136,6 +140,16 @@ func (p *poller) readWriteLoop() {
 			return
 		}
 
+		p.mux.Lock()
+		for i, c := range p.closing {
+			if p.getConn(c.fd) == c {
+				c.closeWithError(nil)
+			}
+			p.closing[i] = nil
+		}
+		p.closing = p.closing[0:0]
+		p.mux.Unlock()
+
 		if n <= 0 {
 			msec = -1
 			// runtime.Gosched()
@@ -147,6 +161,7 @@ func (p *poller) readWriteLoop() {
 			fd = int(events[i].Fd)
 			switch fd {
 			case p.evtfd:
+
 			default:
 				p.readWrite(&events[i])
 			}
@@ -160,9 +175,20 @@ func (p *poller) stop() {
 	if p.listener != nil {
 		p.listener.Close()
 	} else {
-		n := uint64(1)
-		syscall.Write(p.evtfd, (*(*[8]byte)(unsafe.Pointer(&n)))[:])
+		p.trigger()
 	}
+}
+
+func (p *poller) trigger() {
+	n := uint64(1)
+	syscall.Write(p.evtfd, (*(*[8]byte)(unsafe.Pointer(&n)))[:])
+}
+
+func (p *poller) triggerClose(c *Conn) error {
+	p.mux.Lock()
+	p.closing = append(p.closing, c)
+	p.mux.Unlock()
+	p.trigger()
 }
 
 func (p *poller) addRead(fd int) error {

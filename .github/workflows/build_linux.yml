@@ -3,10 +3,10 @@ name: build-linux
 on:
   push:
     branches:
-      - master
+      - inorder
   pull_request:
     branches:
-      - master
+      - inorder
 
 env:
   GO111MODULE: off
