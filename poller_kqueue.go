@@ -21,7 +21,8 @@ type poller struct {
 
 	g *Gopher
 
-	kfd int
+	kfd   int
+	evtfd int
 
 	listener net.Listener
 
@@ -36,8 +37,6 @@ type poller struct {
 	pollType string
 
 	eventList []syscall.Kevent_t
-
-	closing []*Conn
 }
 
 func (p *poller) addConn(c *Conn) {
@@ -64,16 +63,8 @@ func (p *poller) deleteConn(c *Conn) {
 	p.g.onClose(c, c.closeErr)
 }
 
-func (p *poller) trigger() error {
-	_, err := syscall.Kevent(p.kfd, []syscall.Kevent_t{{Ident: 0, Filter: syscall.EVFILT_USER, Fflags: syscall.NOTE_TRIGGER}}, nil, nil)
-	return err
-}
-
-func (p *poller) triggerClose(c *Conn) error {
-	p.mux.Lock()
-	p.closing = append(p.closing, c)
-	p.mux.Unlock()
-	return p.trigger()
+func (p *poller) trigger() {
+	syscall.Kevent(p.kfd, []syscall.Kevent_t{{Ident: 0, Filter: syscall.EVFILT_USER, Fflags: syscall.NOTE_TRIGGER}}, nil, nil)
 }
 
 func (p *poller) addRead(fd int) {
@@ -201,18 +192,12 @@ func (p *poller) readWriteLoop() {
 			return
 		}
 
-		p.mux.Lock()
-		for i, c := range p.closing {
-			if p.getConn(c.fd) == c {
-				c.closeWithError(nil)
-			}
-			p.closing[i] = nil
-		}
-		p.closing = p.closing[0:0]
-		p.mux.Unlock()
-
 		for i := 0; i < n; i++ {
-			p.readWrite(&events[i])
+			switch int(events[i].Ident) {
+			case p.evtfd:
+			default:
+				p.readWrite(&events[i])
+			}
 		}
 	}
 }
