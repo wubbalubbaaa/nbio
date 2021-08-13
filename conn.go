@@ -30,7 +30,7 @@ func DialTimeout(network string, address string, timeout time.Duration) (*Conn, 
 func (c *Conn) ExecuteLen() int {
 	c.mux.Lock()
 	n := len(c.execList)
-	c.mux.Lock()
+	c.mux.Unlock()
 	return n
 }
 
