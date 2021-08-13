@@ -128,8 +128,6 @@ type Server struct {
 	_onClose func(c *nbio.Conn, err error)
 	_onStop  func()
 
-	MessageHandlerExecutor func(index int, f func())
-
 	mux   sync.Mutex
 	conns map[*nbio.Conn]struct{}
 }
@@ -168,15 +166,12 @@ func (s *Server) closeIdleConns(chCloseQueue chan *nbio.Conn) {
 	for c := range s.conns {
 		sess := c.Session()
 		if sess != nil {
-			parser := sess.(*Parser)
-			parser.messageExecuteMux.Lock()
-			if len(parser.messageExecuteQueue) == 0 {
+			if c.ExecuteLen() == 0 {
 				select {
 				case chCloseQueue <- c:
 				default:
 				}
 			}
-			parser.messageExecuteMux.Unlock()
 		}
 	}
 }
@@ -224,7 +219,7 @@ Exit:
 }
 
 // NewServer .
-func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(index int, f func())) *Server {
+func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(f func())) *Server {
 	if conf.MaxLoad <= 0 {
 		conf.MaxLoad = DefaultMaxLoad
 	}
@@ -258,7 +253,7 @@ func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(in
 		}
 
 		messageHandlerExecutePool = taskpool.NewMixedPool(nativeSize, conf.NPoller, 1024)
-		messageHandlerExecutor = messageHandlerExecutePool.GoByIndex
+		messageHandlerExecutor = messageHandlerExecutePool.Go
 	}
 
 	gopherConf := nbio.Config{
@@ -274,6 +269,7 @@ func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(in
 		LockListener:             conf.LockListener,
 	}
 	g := nbio.NewGopher(gopherConf)
+	g.Execute = messageHandlerExecutor
 
 	svr := &Server{
 		Gopher:                       g,
@@ -284,7 +280,6 @@ func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(in
 		MaxWebsocketFramePayloadSize: conf.MaxWebsocketFramePayloadSize,
 		ReleaseWebsocketPayload:      conf.ReleaseWebsocketPayload,
 		CheckUtf8:                    utf8.Valid,
-		MessageHandlerExecutor:       messageHandlerExecutor,
 		conns:                        map[*nbio.Conn]struct{}{},
 	}
 
@@ -299,7 +294,7 @@ func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(in
 		svr.mux.Unlock()
 		svr._onOpen(c)
 		processor := NewServerProcessor(c, handler, conf.KeepaliveTime, conf.EnableSendfile)
-		parser := NewParser(processor, false, conf.ReadLimit, messageHandlerExecutor)
+		parser := NewParser(processor, false, conf.ReadLimit, c.Execute)
 		parser.Server = svr
 		processor.(*ServerProcessor).parser = parser
 		c.SetSession(parser)
@@ -346,7 +341,7 @@ func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(in
 
 	g.OnStop(func() {
 		svr._onStop()
-		svr.MessageHandlerExecutor = func(index int, f func()) {}
+		g.Execute = func(f func()) {}
 		if messageHandlerExecutePool != nil {
 			messageHandlerExecutePool.Stop()
 		}
@@ -355,7 +350,7 @@ func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(in
 }
 
 // NewServerTLS .
-func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func(index int, f func()), tlsConfig *tls.Config) *Server {
+func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func(f func()), tlsConfig *tls.Config) *Server {
 	if conf.MaxLoad <= 0 {
 		conf.MaxLoad = DefaultMaxLoad
 	}
@@ -412,7 +407,7 @@ func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func
 		}
 
 		messageHandlerExecutePool = taskpool.NewMixedPool(nativeSize, conf.NPoller, 1024)
-		messageHandlerExecutor = messageHandlerExecutePool.GoByIndex
+		messageHandlerExecutor = messageHandlerExecutePool.Go
 	}
 
 	// setup prefer protos: http2.0, other protos to be added
@@ -439,6 +434,7 @@ func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func
 		LockListener:             conf.LockListener,
 	}
 	g := nbio.NewGopher(gopherConf)
+	g.Execute = messageHandlerExecutor
 
 	svr := &Server{
 		Gopher:                       g,
@@ -449,7 +445,6 @@ func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func
 		MaxWebsocketFramePayloadSize: conf.MaxWebsocketFramePayloadSize,
 		ReleaseWebsocketPayload:      conf.ReleaseWebsocketPayload,
 		CheckUtf8:                    utf8.Valid,
-		MessageHandlerExecutor:       messageHandlerExecutor,
 		conns:                        map[*nbio.Conn]struct{}{},
 	}
 
@@ -467,7 +462,7 @@ func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func
 		svr._onOpen(c)
 		tlsConn := tls.NewConn(c, tlsConfig, isClient, true, mempool.DefaultMemPool)
 		processor := NewServerProcessor(tlsConn, handler, conf.KeepaliveTime, conf.EnableSendfile)
-		parser := NewParser(processor, false, conf.ReadLimit, messageHandlerExecutor)
+		parser := NewParser(processor, false, conf.ReadLimit, c.Execute)
 		parser.Conn = tlsConn
 		parser.Server = svr
 		processor.(*ServerProcessor).parser = parser
@@ -534,7 +529,7 @@ func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func
 
 	g.OnStop(func() {
 		svr._onStop()
-		svr.MessageHandlerExecutor = func(index int, f func()) {}
+		g.Execute = func(f func()) {}
 		if messageHandlerExecutePool != nil {
 			messageHandlerExecutePool.Stop()
 		}

@@ -92,14 +92,8 @@ func (u *Upgrader) OnMessage(h func(*Conn, MessageType, []byte)) {
 	}
 }
 
-// var initDataFrameWarning = false
-
 func (u *Upgrader) OnDataFrame(h func(*Conn, MessageType, bool, []byte)) {
 	if h != nil {
-		// if !initDataFrameWarning {
-		// 	initDataFrameWarning = true
-		// 	logging.Warn("If you use a DataFrame handler, please make sure the `messageHandlerExecutor` you passed to `nbhttp.NewServer/NewServerTLS` could promise to handle the frames in order, and please make sure that the Upgrader must not set `EnableCompression` to `true`. If you are sure about that, ignore this warning!")
-		// }
 		u.dataFrameHandler = h
 	}
 }
