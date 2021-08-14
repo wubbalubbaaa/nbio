@@ -160,10 +160,6 @@ func Free(buf []byte) error {
 	return DefaultMemPool.Free(buf)
 }
 
-func State() (int64, int64, string) {
-	return 0, 0, ""
-}
-
 func getStack() string {
 	i := 2
 	str := ""
