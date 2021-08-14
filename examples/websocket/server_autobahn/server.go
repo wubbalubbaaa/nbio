@@ -32,7 +32,6 @@ func newUpgrader(isDataFrame bool) *websocket.Upgrader {
 			}
 		})
 	} else {
-		u.EnableWriteCompression(true)
 		u.OnMessage(func(c *websocket.Conn, messageType websocket.MessageType, data []byte) {
 			c.WriteMessage(messageType, data)
 		})
