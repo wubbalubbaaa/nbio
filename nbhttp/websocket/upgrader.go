@@ -335,7 +335,7 @@ func (u *Upgrader) Read(p *nbhttp.Parser, data []byte) error {
 				frame = mempool.Malloc(len(body))
 				copy(frame, body)
 			}
-			u.handleMessage(p, opcode, frame)
+			u.handleProtocolMessage(p, opcode, frame)
 		}
 
 		if len(u.buffer) == 0 {
@@ -397,6 +397,13 @@ func (u *Upgrader) handleMessage(p *nbhttp.Parser, opcode MessageType, body []by
 	u.expectingFragments = false
 	u.message = nil
 	u.opcode = 0
+}
+
+func (u *Upgrader) handleProtocolMessage(p *nbhttp.Parser, opcode MessageType, body []byte) {
+	h := u.conn.handleMessage
+	p.Execute(func() {
+		h(opcode, body)
+	})
 }
 
 func (u *Upgrader) nextFrame() (opcode MessageType, body []byte, ok, fin, res1, res2, res3 bool) {
