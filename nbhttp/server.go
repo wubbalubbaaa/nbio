@@ -301,15 +301,17 @@ func NewServer(conf Config, handler http.Handler, messageHandlerExecutor func(f 
 		c.SetReadDeadline(time.Now().Add(conf.KeepaliveTime))
 	})
 	g.OnClose(func(c *nbio.Conn, err error) {
-		parser := c.Session().(*Parser)
-		if parser == nil {
-			logging.Error("nil parser")
-		}
-		parser.Close(err)
-		svr._onClose(c, err)
-		svr.mux.Lock()
-		delete(svr.conns, c)
-		svr.mux.Unlock()
+		c.Execute(func() {
+			parser := c.Session().(*Parser)
+			if parser == nil {
+				logging.Error("nil parser")
+			}
+			parser.Close(err)
+			svr._onClose(c, err)
+			svr.mux.Lock()
+			delete(svr.conns, c)
+			svr.mux.Unlock()
+		})
 	})
 	g.OnData(func(c *nbio.Conn, data []byte) {
 		defer func() {
@@ -470,17 +472,19 @@ func NewServerTLS(conf Config, handler http.Handler, messageHandlerExecutor func
 		c.SetReadDeadline(time.Now().Add(conf.KeepaliveTime))
 	})
 	g.OnClose(func(c *nbio.Conn, err error) {
-		parser := c.Session().(*Parser)
-		if parser == nil {
-			logging.Error("nil parser")
-			return
-		}
-		parser.Conn.Close()
-		parser.Close(err)
-		svr._onClose(c, err)
-		svr.mux.Lock()
-		delete(svr.conns, c)
-		svr.mux.Unlock()
+		c.Execute(func() {
+			parser := c.Session().(*Parser)
+			if parser == nil {
+				logging.Error("nil parser")
+				return
+			}
+			parser.Conn.Close()
+			parser.Close(err)
+			svr._onClose(c, err)
+			svr.mux.Lock()
+			delete(svr.conns, c)
+			svr.mux.Unlock()
+		})
 	})
 
 	g.OnData(func(c *nbio.Conn, data []byte) {
