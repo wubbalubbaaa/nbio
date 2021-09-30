@@ -448,7 +448,6 @@ func (u *Upgrader) handleMessage(p *nbhttp.Parser, opcode MessageType, body []by
 	p.Execute(func() {
 		u.handleWsMessage(u.conn, opcode, body)
 	})
-
 }
 
 func (u *Upgrader) handleProtocolMessage(p *nbhttp.Parser, opcode MessageType, body []byte) {

@@ -326,7 +326,6 @@ func (g *Gopher) removeTimer(it *htimer) {
 		if len(g.timers) > 0 {
 			if index == 0 {
 				g.trigger.Reset(time.Until(g.timers[0].expire))
-
 			}
 		} else {
 			g.trigger.Reset(timeForever)

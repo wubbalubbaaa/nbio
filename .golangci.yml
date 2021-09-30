@@ -645,13 +645,17 @@ linters:
     - govet
     - megacheck
     - misspell
+    - prealloc
+    - predeclared
     - nolintlint
-    - wastedassign
+    - stylecheck
+    - tagliatelle
     - unconvert
+    - wastedassign
+    - whitespace
   enable-all: false
   disable:
     - maligned
-    - prealloc
     - scopelint
     - errcheck
   presets:

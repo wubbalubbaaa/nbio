@@ -93,7 +93,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var servers []string
+	servers := make([]string, 0, len(report))
 	for s := range report {
 		servers = append(servers, s)
 	}

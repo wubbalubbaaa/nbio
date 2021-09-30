@@ -156,7 +156,6 @@ func testParser(t *testing.T, isClient bool, data []byte) error {
 			if err != nil {
 				t.Fatalf("nRead: %v, numOne: %v, reads: %v, error: %v", len(data)-len(tmp), len(data), reads, err)
 			}
-
 		}
 		if nRequest != (i+1)*2 {
 			return fmt.Errorf("nRequest: %v, %v", i, nRequest)
