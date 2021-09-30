@@ -161,7 +161,7 @@ func (g *Gopher) Stop() {
 	}
 
 	g.Wait()
-	logging.Info("Gopher[%v] stop", g.Name)
+	logging.Infof("Gopher[%v] stop", g.Name)
 }
 
 // AddConn adds conn to a poller.
@@ -353,8 +353,8 @@ func (g *Gopher) resetTimer(it *htimer) {
 
 func (g *Gopher) timerLoop() {
 	defer g.Done()
-	logging.Debug("Gopher[%v] timer start", g.Name)
-	defer logging.Debug("Gopher[%v] timer stopped", g.Name)
+	logging.Debugf("Gopher[%v] timer start", g.Name)
+	defer logging.Debugf("Gopher[%v] timer stopped", g.Name)
 	for {
 		select {
 		case <-g.chCalling:
@@ -375,7 +375,7 @@ func (g *Gopher) timerLoop() {
 							const size = 64 << 10
 							buf := make([]byte, size)
 							buf = buf[:runtime.Stack(buf, false)]
-							logging.Error("Gopher[%v] exec call failed: %v\n%v\n", g.Name, err, *(*string)(unsafe.Pointer(&buf)))
+							logging.Errorf("Gopher[%v] exec call failed: %v\n%v\n", g.Name, err, *(*string)(unsafe.Pointer(&buf)))
 						}
 					}()
 					f()
@@ -401,7 +401,7 @@ func (g *Gopher) timerLoop() {
 								const size = 64 << 10
 								buf := make([]byte, size)
 								buf = buf[:runtime.Stack(buf, false)]
-								logging.Error("Gopher[%v] exec timer failed: %v\n%v\n", g.Name, err, *(*string)(unsafe.Pointer(&buf)))
+								logging.Errorf("Gopher[%v] exec timer failed: %v\n%v\n", g.Name, err, *(*string)(unsafe.Pointer(&buf)))
 							}
 						}()
 						it.f()

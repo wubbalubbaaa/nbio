@@ -141,7 +141,7 @@ func (c *ClientConn) Do(req *http.Request, handler func(res *http.Response, conn
 			const size = 64 << 10
 			buf := make([]byte, size)
 			buf = buf[:runtime.Stack(buf, false)]
-			logging.Error("ClientConn Do failed: %v\n%v\n", err, *(*string)(unsafe.Pointer(&buf)))
+			logging.Errorf("ClientConn Do failed: %v\n%v\n", err, *(*string)(unsafe.Pointer(&buf)))
 		}
 	}()
 

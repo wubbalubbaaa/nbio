@@ -71,7 +71,7 @@ func (res *Response) WriteHeader(statusCode int) {
 			v, err := strconv.ParseInt(cl, 10, 64)
 			if err == nil && v >= 0 {
 			} else {
-				logging.Error("http: invalid Content-Length of %q", cl)
+				logging.Errorf("http: invalid Content-Length of %q", cl)
 				res.header.Del(contentLengthHeader)
 			}
 		}

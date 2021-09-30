@@ -235,7 +235,7 @@ func (e *Engine) Shutdown(ctx context.Context) error {
 
 Exit:
 	e.Stop()
-	logging.Info("Gopher[%v] shutdown", e.Gopher.Name)
+	logging.Infof("Gopher[%v] shutdown", e.Gopher.Name)
 	return nil
 }
 
@@ -291,19 +291,19 @@ func (e *Engine) DataHandler(c *nbio.Conn, data []byte) {
 			const size = 64 << 10
 			buf := make([]byte, size)
 			buf = buf[:runtime.Stack(buf, false)]
-			logging.Error("execute parser failed: %v\n%v\n", err, *(*string)(unsafe.Pointer(&buf)))
+			logging.Errorf("execute parser failed: %v\n%v\n", err, *(*string)(unsafe.Pointer(&buf)))
 		}
 	}()
 
 	parser := c.Session().(*Parser)
 	if parser == nil {
-		logging.Error("nil parser")
+		logging.Errorf("nil parser")
 		return
 	}
 
 	err := parser.Read(data)
 	if err != nil {
-		logging.Debug("parser.Read failed: %v", err)
+		logging.Debugf("parser.Read failed: %v", err)
 		c.CloseWithError(err)
 	}
 }
@@ -315,13 +315,13 @@ func (e *Engine) TLSDataHandler(c *nbio.Conn, data []byte) {
 			const size = 64 << 10
 			buf := make([]byte, size)
 			buf = buf[:runtime.Stack(buf, false)]
-			logging.Error("execute parser failed: %v\n%v\n", err, *(*string)(unsafe.Pointer(&buf)))
+			logging.Errorf("execute parser failed: %v\n%v\n", err, *(*string)(unsafe.Pointer(&buf)))
 		}
 	}()
 
 	parser := c.Session().(*Parser)
 	if parser == nil {
-		logging.Error("nil parser")
+		logging.Errorf("nil parser")
 		c.Close()
 		return
 	}
@@ -337,7 +337,7 @@ func (e *Engine) TLSDataHandler(c *nbio.Conn, data []byte) {
 			if nread > 0 {
 				err := parser.Read(buffer[:nread])
 				if err != nil {
-					logging.Debug("parser.Read failed: %v", err)
+					logging.Debugf("parser.Read failed: %v", err)
 					c.CloseWithError(err)
 					return
 				}
@@ -414,7 +414,7 @@ func NewEngine(conf Config, v ...interface{}) *Engine {
 					const size = 64 << 10
 					buf := make([]byte, size)
 					buf = buf[:runtime.Stack(buf, false)]
-					logging.Error("clientExecutor call failed: %v\n%v\n", err, *(*string)(unsafe.Pointer(&buf)))
+					logging.Errorf("clientExecutor call failed: %v\n%v\n", err, *(*string)(unsafe.Pointer(&buf)))
 				}
 			}()
 			f()
@@ -503,7 +503,7 @@ func NewEngine(conf Config, v ...interface{}) *Engine {
 		c.MustExecute(func() {
 			parser := c.Session().(*Parser)
 			if parser == nil {
-				logging.Error("nil parser")
+				logging.Errorf("nil parser")
 			}
 			parser.Close(err)
 			engine._onClose(c, err)
@@ -609,7 +609,7 @@ func NewEngineTLS(conf Config, v ...interface{}) *Engine {
 					const size = 64 << 10
 					buf := make([]byte, size)
 					buf = buf[:runtime.Stack(buf, false)]
-					logging.Error("clientExecutor call failed: %v\n%v\n", err, *(*string)(unsafe.Pointer(&buf)))
+					logging.Errorf("clientExecutor call failed: %v\n%v\n", err, *(*string)(unsafe.Pointer(&buf)))
 				}
 			}()
 			f()
@@ -713,7 +713,7 @@ func NewEngineTLS(conf Config, v ...interface{}) *Engine {
 		c.MustExecute(func() {
 			parser := c.Session().(*Parser)
 			if parser == nil {
-				logging.Error("nil parser")
+				logging.Errorf("nil parser")
 				return
 			}
 			parser.Conn.Close()

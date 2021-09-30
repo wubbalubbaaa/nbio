@@ -39,10 +39,10 @@ const (
 // Logger defines log interface.
 type Logger interface {
 	SetLevel(lvl int)
-	Debug(format string, v ...interface{})
-	Info(format string, v ...interface{})
-	Warn(format string, v ...interface{})
-	Error(format string, v ...interface{})
+	Debugf(format string, v ...interface{})
+	Infof(format string, v ...interface{})
+	Warnf(format string, v ...interface{})
+	Errorf(format string, v ...interface{})
 }
 
 // SetLogger sets default logger.
@@ -76,57 +76,57 @@ func (l *logger) SetLevel(lvl int) {
 }
 
 // Debug uses fmt.Printf to log a message at LevelDebug.
-func (l *logger) Debug(format string, v ...interface{}) {
+func (l *logger) Debugf(format string, v ...interface{}) {
 	if LevelDebug >= l.level {
 		fmt.Fprintf(Output, time.Now().Format(TimeFormat)+" [DBG] "+format+"\n", v...)
 	}
 }
 
 // Info uses fmt.Printf to log a message at LevelInfo.
-func (l *logger) Info(format string, v ...interface{}) {
+func (l *logger) Infof(format string, v ...interface{}) {
 	if LevelInfo >= l.level {
 		fmt.Fprintf(Output, time.Now().Format(TimeFormat)+" [INF] "+format+"\n", v...)
 	}
 }
 
 // Warn uses fmt.Printf to log a message at LevelWarn.
-func (l *logger) Warn(format string, v ...interface{}) {
+func (l *logger) Warnf(format string, v ...interface{}) {
 	if LevelWarn >= l.level {
 		fmt.Fprintf(Output, time.Now().Format(TimeFormat)+" [WRN] "+format+"\n", v...)
 	}
 }
 
 // Error uses fmt.Printf to log a message at LevelError.
-func (l *logger) Error(format string, v ...interface{}) {
+func (l *logger) Errorf(format string, v ...interface{}) {
 	if LevelError >= l.level {
 		fmt.Fprintf(Output, time.Now().Format(TimeFormat)+" [ERR] "+format+"\n", v...)
 	}
 }
 
-// Debug uses DefaultLogger to log a message at LevelDebug.
-func Debug(format string, v ...interface{}) {
+// Debugf uses DefaultLogger to log a message at LevelDebug.
+func Debugf(format string, v ...interface{}) {
 	if DefaultLogger != nil {
-		DefaultLogger.Debug(format, v...)
+		DefaultLogger.Debugf(format, v...)
 	}
 }
 
-// Info uses DefaultLogger to log a message at LevelInfo.
-func Info(format string, v ...interface{}) {
+// Infof uses DefaultLogger to log a message at LevelInfo.
+func Infof(format string, v ...interface{}) {
 	if DefaultLogger != nil {
-		DefaultLogger.Info(format, v...)
+		DefaultLogger.Infof(format, v...)
 	}
 }
 
-// Warn uses DefaultLogger to log a message at LevelWarn.
-func Warn(format string, v ...interface{}) {
+// Warnf uses DefaultLogger to log a message at LevelWarn.
+func Warnf(format string, v ...interface{}) {
 	if DefaultLogger != nil {
-		DefaultLogger.Warn(format, v...)
+		DefaultLogger.Warnf(format, v...)
 	}
 }
 
-// Error uses DefaultLogger to log a message at LevelError.
-func Error(format string, v ...interface{}) {
+// Errorf uses DefaultLogger to log a message at LevelError.
+func Errorf(format string, v ...interface{}) {
 	if DefaultLogger != nil {
-		DefaultLogger.Error(format, v...)
+		DefaultLogger.Errorf(format, v...)
 	}
 }

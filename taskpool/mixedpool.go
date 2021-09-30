@@ -26,7 +26,7 @@ func (mp *MixedPool) callWithRecover(f func()) {
 			const size = 64 << 10
 			buf := make([]byte, size)
 			buf = buf[:runtime.Stack(buf, false)]
-			logging.Error("taskpool call failed: %v\n%v\n", err, *(*string)(unsafe.Pointer(&buf)))
+			logging.Errorf("taskpool call failed: %v\n%v\n", err, *(*string)(unsafe.Pointer(&buf)))
 		}
 		atomic.AddInt32(&mp.cuncurrent, -1)
 	}()

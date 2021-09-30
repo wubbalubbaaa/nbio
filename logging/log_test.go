@@ -27,36 +27,36 @@ func Test_logger_SetLevel(t *testing.T) {
 
 func Test_logger_Debug(t *testing.T) {
 	l := &logger{level: LevelDebug}
-	l.Debug("logger debug test")
+	l.Debugf("logger debug test")
 }
 
 func Test_logger_Info(t *testing.T) {
 	l := &logger{level: LevelDebug}
-	l.Info("logger info test")
+	l.Infof("logger info test")
 }
 
 func Test_logger_Warn(t *testing.T) {
 	l := &logger{level: LevelDebug}
-	l.Warn("logger warn test")
+	l.Warnf("logger warn test")
 }
 
 func Test_logger_Error(t *testing.T) {
 	l := &logger{level: LevelDebug}
-	l.Error("logger error test")
+	l.Errorf("logger error test")
 }
 
 func Test_Debug(t *testing.T) {
-	Debug("log.Debug")
+	Debugf("log.Debug")
 }
 
 func Test_Info(t *testing.T) {
-	Info("log.Info")
+	Infof("log.Info")
 }
 
 func Test_Warn(t *testing.T) {
-	Warn("log.Warn")
+	Warnf("log.Warn")
 }
 
 func Test_Error(t *testing.T) {
-	Error("log.Error")
+	Errorf("log.Error")
 }

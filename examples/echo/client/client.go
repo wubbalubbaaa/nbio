@@ -50,8 +50,8 @@ func main() {
 
 	select {
 	case <-ctx.Done():
-		logging.Error("timeout")
+		logging.Errorf("timeout")
 	case <-done:
-		logging.Info("success")
+		logging.Infof("success")
 	}
 }

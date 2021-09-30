@@ -75,7 +75,7 @@ func NewUpgrader() *Upgrader {
 		}
 		err := c.WriteMessage(PongMessage, []byte(data))
 		if err != nil {
-			logging.Debug("failed to send pong %v", err)
+			logging.Debugf("failed to send pong %v", err)
 			u.conn.Close()
 			return
 		}
@@ -480,7 +480,7 @@ func (u *Upgrader) handleWsMessage(c *Conn, opcode MessageType, data []byte) {
 	case PongMessage:
 		u.pongMessageHandler(c, string(data))
 	case FragmentMessage:
-		logging.Debug("invalid fragment message")
+		logging.Debugf("invalid fragment message")
 		c.Close()
 	default:
 		c.Close()
