@@ -248,7 +248,7 @@ func (p *ServerProcessor) flushResponse(res *Response) {
 	if p.conn != nil {
 		req := res.request
 		if !res.hijacked {
-			res.eoncodeHead()
+			res.eoncodeHead(len(res.bodyBuffer))
 			if err := res.flushTrailer(p.conn); err != nil {
 				p.conn.Close()
 				releaseRequest(req)

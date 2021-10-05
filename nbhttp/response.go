@@ -103,13 +103,15 @@ func (res *Response) Write(data []byte) (int, error) {
 	res.hasBody = true
 
 	if res.chunked {
-		res.eoncodeHead()
+		lenStr := res.formatInt(l, 16)
+		bodyLen := len(lenStr) + l + 4
+
+		res.eoncodeHead(bodyLen)
 
 		buf := res.buffer
 		hl := len(buf)
 		res.buffer = nil
-		lenStr := res.formatInt(l, 16)
-		size := hl + len(lenStr) + l + 4
+		size := hl + bodyLen
 		if size < maxPacketSize {
 			buf = append(buf, lenStr...)
 			buf = append(buf, "\r\n"...)
@@ -135,7 +137,7 @@ func (res *Response) Write(data []byte) (int, error) {
 	}
 
 	if len(res.header[contentLengthHeader]) > 0 {
-		res.eoncodeHead()
+		res.eoncodeHead(l)
 
 		buf := res.buffer
 		res.buffer = nil
@@ -162,7 +164,7 @@ func (res *Response) ReadFrom(r io.Reader) (n int64, err error) {
 	}
 
 	res.hasBody = true
-	res.eoncodeHead()
+	res.eoncodeHead(0)
 	_, err = c.Write(res.buffer)
 	res.buffer = nil
 	if err != nil {
@@ -223,7 +225,7 @@ func (res *Response) checkChunked() {
 }
 
 // flush .
-func (res *Response) eoncodeHead() {
+func (res *Response) eoncodeHead(bodyLen int) {
 	if res.headEncoded {
 		return
 	}
@@ -235,7 +237,7 @@ func (res *Response) eoncodeHead() {
 	status := res.status
 	statusCode := res.statusCode
 
-	data := mempool.Malloc(1024)[0:0]
+	data := mempool.Malloc(bodyLen + 1024)[0:0]
 
 	data = append(data, res.request.Proto...)
 	data = append(data, ' ', '0'+byte(statusCode/100), '0'+byte(statusCode%100)/10, '0'+byte(statusCode%10), ' ')
