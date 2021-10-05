@@ -19,7 +19,46 @@ type Allocator interface {
 }
 
 // DefaultMemPool .
-var DefaultMemPool = New(64)
+var DefaultMemPool Allocator = NewLevelPool(64, 1024*8)
+
+func NewLevelPool(minSize, bigSize int) *LevelPool {
+	return &LevelPool{
+		smallPool: New(minSize),
+		bigPool:   New(bigSize),
+	}
+}
+
+// LevelPool .
+type LevelPool struct {
+	smallPool *MemPool
+	bigPool   *MemPool
+}
+
+// Malloc .
+func (lp *LevelPool) Malloc(size int) []byte {
+	if size < lp.bigPool.minSize {
+		return lp.smallPool.Malloc(size)
+	}
+	return lp.bigPool.Malloc(size)
+}
+
+// Realloc .
+func (lp *LevelPool) Realloc(buf []byte, size int) []byte {
+	if size < lp.bigPool.minSize {
+		return lp.smallPool.Realloc(buf, size)
+	}
+	return lp.bigPool.Realloc(buf, size)
+}
+
+// Free .
+func (lp *LevelPool) Free(buf []byte) {
+	size := len(buf)
+	if size < lp.bigPool.minSize {
+		lp.smallPool.Free(buf)
+		return
+	}
+	lp.bigPool.Free(buf)
+}
 
 // MemPool .
 type MemPool struct {
@@ -33,7 +72,7 @@ type MemPool struct {
 }
 
 // New .
-func New(minSize int) Allocator {
+func New(minSize int) *MemPool {
 	if minSize <= 0 {
 		minSize = 64
 	}
