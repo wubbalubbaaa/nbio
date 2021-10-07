@@ -20,13 +20,14 @@ var (
 	bufferPool       = NewFixedBufferPool(2000, 1*1024*1024, time.Second*10)
 	messagesReceived uint64
 	bytesReceived    uint64
+	addr             = flag.String("addr", ":8888", "address to listen on")
 )
 
 func newUpgrader() *websocket.Upgrader {
 	u := websocket.NewUpgrader()
 
 	onMessageFunc := func(c *websocket.Conn, data []byte) {
-		c.WriteMessage(websocket.BinaryMessage, data)
+		c.WriteMessage(websocket.BinaryMessage, data[:4])
 		atomic.AddUint64(&messagesReceived, 1)
 		atomic.AddUint64(&bytesReceived, uint64(len(data)))
 	}
@@ -79,7 +80,6 @@ func onWebsocket(w http.ResponseWriter, r *http.Request) {
 	}
 	wsConn := conn.(*websocket.Conn)
 	wsConn.SetReadDeadline(time.Time{})
-	fmt.Println("OnOpen:", wsConn.RemoteAddr().String())
 }
 
 func main() {
@@ -98,7 +98,7 @@ func main() {
 
 	svr := nbhttp.NewServerTLS(nbhttp.Config{
 		Network:                 "tcp",
-		Addrs:                   []string{"localhost:8888"},
+		Addrs:                   []string{*addr},
 		ReleaseWebsocketPayload: true,
 	}, mux, nil, tlsConfig)
 

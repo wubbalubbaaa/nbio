@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"log"
 	"net/url"
 	"os"
 	"os/signal"
+	"sync"
 	"time"
 
 	"github.com/lesismal/nbio/nbhttp"
@@ -20,7 +22,11 @@ var (
 	clients           = flag.Int("clients", 1, "number of clients")
 	floodLargeMessage = flag.Bool("flood", false, "flood server with large messages")
 	noEcho            = flag.Bool("no-echo", false, "disables echo server message")
+	addr              = flag.String("addr", ":8888", "address to connect to")
 	connectedClients  chan *websocket.Conn
+	sequenceMumber    = uint32(0)
+	mtx               = sync.Mutex{}
+	seqMap            = make(map[uint32]bool)
 )
 
 func newUpgrader() *websocket.Upgrader {
@@ -32,6 +38,16 @@ func newUpgrader() *websocket.Upgrader {
 				c.WriteMessage(messageType, data)
 			})
 			log.Println("onEcho:", string(data))
+		}
+		num := binary.LittleEndian.Uint32(data)
+		mtx.Lock()
+		_, ok := seqMap[num]
+		if ok {
+			delete(seqMap, num)
+		}
+		mtx.Unlock()
+		if !ok {
+			log.Println("sequence error ", num)
 		}
 		connectedClients <- c
 	})
@@ -59,7 +75,7 @@ func main() {
 
 	connectedClients = make(chan *websocket.Conn, *clients)
 	for i := 0; i < *clients; i++ {
-		u := url.URL{Scheme: "wss", Host: "localhost:8888", Path: "/wss"}
+		u := url.URL{Scheme: "wss", Host: *addr, Path: "/wss"}
 		dialer := &websocket.Dialer{
 			Engine:          engine,
 			Upgrader:        newUpgrader(),
@@ -74,12 +90,18 @@ func main() {
 	}
 
 	if *floodLargeMessage {
-		payload := make([]byte, 1024*1024)
 		for i := 0; i < 100; i++ {
 			go func() {
+				payload := make([]byte, 1024*1024)
 				for {
 					select {
 					case c := <-connectedClients:
+						mtx.Lock()
+						num := sequenceMumber
+						sequenceMumber++
+						seqMap[num] = true
+						mtx.Unlock()
+						binary.LittleEndian.PutUint32(payload, num)
 						c.WriteMessage(websocket.BinaryMessage, payload)
 					}
 				}
