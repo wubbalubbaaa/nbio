@@ -356,6 +356,15 @@ func (e *Engine) TLSDataHandler(c *nbio.Conn, data []byte) {
 	}
 }
 
+func NewServerExecutorPool(conf *Config) *taskpool.MixedPool {
+	if conf.MessageHandlerPoolSize <= 0 {
+		conf.MessageHandlerPoolSize = runtime.NumCPU() * 1024
+	}
+	nativeSize := conf.MessageHandlerPoolSize - 1
+	return taskpool.NewMixedPool(nativeSize, 1, 1024*1024, true)
+
+}
+
 // NewEngine .
 func NewEngine(conf Config, v ...interface{}) *Engine {
 	if conf.MaxLoad <= 0 {
@@ -406,11 +415,7 @@ func NewEngine(conf Config, v ...interface{}) *Engine {
 
 	var messageHandlerExecutePool *taskpool.MixedPool
 	if serverExecutor == nil {
-		if conf.MessageHandlerPoolSize <= 0 {
-			conf.MessageHandlerPoolSize = runtime.NumCPU() * 1024
-		}
-		nativeSize := conf.MessageHandlerPoolSize - 1
-		messageHandlerExecutePool = taskpool.NewMixedPool(nativeSize, 1, 1024*1024, true)
+		messageHandlerExecutePool = NewServerExecutorPool(&conf)
 		serverExecutor = messageHandlerExecutePool.Go
 	}
 
@@ -600,11 +605,7 @@ func NewEngineTLS(conf Config, v ...interface{}) *Engine {
 
 	var messageHandlerExecutePool *taskpool.MixedPool
 	if serverExecutor == nil {
-		if conf.MessageHandlerPoolSize <= 0 {
-			conf.MessageHandlerPoolSize = runtime.NumCPU() * 1024
-		}
-		nativeSize := conf.MessageHandlerPoolSize - 1
-		messageHandlerExecutePool = taskpool.NewMixedPool(nativeSize, 1, 1024*1024, true)
+		messageHandlerExecutePool = NewServerExecutorPool(&conf)
 		serverExecutor = messageHandlerExecutePool.Go
 	}
 

@@ -43,18 +43,38 @@ func main() {
 	mux := &http.ServeMux{}
 	mux.HandleFunc("/echo", onEcho)
 
-	svr := nbhttp.NewServerTLS(nbhttp.Config{
+	confTLS := nbhttp.Config{
 		Network: "tcp",
 		Addrs:   []string{"localhost:8888"},
-	}, mux, nil, tlsConfig)
+	}
+	// create common executor pool
+	serverExecutorPool := nbhttp.NewServerExecutorPool(&confTLS)
+	defer serverExecutorPool.Stop()
 
-	err = svr.Start()
+	// start tls server
+	svrTLS := nbhttp.NewServerTLS(confTLS, mux, serverExecutorPool.Go, tlsConfig)
+
+	err = svrTLS.Start()
 	if err != nil {
 		fmt.Printf("nbio.Start failed: %v\n", err)
 		return
 	}
-	defer svr.Stop()
+	defer svrTLS.Stop()
 
+	confNonTLS := nbhttp.Config{
+		Network: "tcp",
+		Addrs:   []string{"localhost:8887"},
+	}
+	// start non tls server
+	svrNonTLS := nbhttp.NewServer(confNonTLS, mux, serverExecutorPool.Go)
+	err = svrNonTLS.Start()
+	if err != nil {
+		fmt.Printf("nbio.Start failed: %v\n", err)
+		return
+	}
+	defer svrNonTLS.Stop()
+
+	// stats
 	ticker := time.NewTicker(time.Second)
 	for i := 1; true; i++ {
 		<-ticker.C
