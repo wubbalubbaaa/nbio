@@ -152,6 +152,13 @@ type Config struct {
 	Cancel  func()
 
 	SupportServerOnly bool
+
+	UseStdConn bool
+}
+
+type StdConn struct {
+	net.Conn
+	handling bool
 }
 
 // Engine .
@@ -165,15 +172,15 @@ type Engine struct {
 	BodyAllocator                mempool.Allocator
 	CheckUtf8                    func(data []byte) bool
 
-	listeners []net.Listener
+	runningStd bool
+	listeners  []net.Listener
 
-	_onOpen  func(c *nbio.Conn)
-	_onClose func(c *nbio.Conn, err error)
+	_onOpen  func(c net.Conn)
+	_onClose func(c net.Conn, err error)
 	_onStop  func()
 
-	mux   sync.Mutex
-	conns map[*nbio.Conn]struct{}
-
+	mux          sync.Mutex
+	conns        map[net.Conn]struct{}
 	tlsBuffers   [][]byte
 	getTLSBuffer func(c *nbio.Conn) []byte
 
@@ -185,12 +192,12 @@ type Engine struct {
 }
 
 // OnOpen registers callback for new connection.
-func (e *Engine) OnOpen(h func(c *nbio.Conn)) {
+func (e *Engine) OnOpen(h func(c net.Conn)) {
 	e._onOpen = h
 }
 
 // OnClose registers callback for disconnected.
-func (e *Engine) OnClose(h func(c *nbio.Conn, err error)) {
+func (e *Engine) OnClose(h func(c net.Conn, err error)) {
 	e._onClose = h
 }
 
@@ -204,15 +211,25 @@ func (e *Engine) Online() int {
 	return len(e.conns)
 }
 
-func (e *Engine) closeIdleConns(chCloseQueue chan *nbio.Conn) {
+func (e *Engine) closeIdleConns(chCloseQueue chan net.Conn) {
 	e.mux.Lock()
 	defer e.mux.Unlock()
 	for c := range e.conns {
-		sess := c.Session()
-		if sess != nil {
-			if c.ExecuteLen() == 0 {
+		if nbc, ok := c.(*nbio.Conn); ok {
+			sess := nbc.Session()
+			if sess != nil {
+				if nbc.ExecuteLen() == 0 {
+					select {
+					case chCloseQueue <- c:
+					default:
+					}
+				}
+			}
+		} else if stdConn, ok := c.(*StdConn); ok {
+			if !stdConn.handling {
+				stdConn.Close()
 				select {
-				case chCloseQueue <- c:
+				case chCloseQueue <- stdConn:
 				default:
 				}
 			}
@@ -258,7 +275,11 @@ func (e *Engine) startListeners() error {
 				for {
 					conn, err := ln.Accept()
 					if err == nil {
-						e.AddConnTLS(conn, tlsConfig)
+						if !e.UseStdConn {
+							e.AddConnTLS(conn, tlsConfig)
+						} else {
+							e.AddStdConnTLS(&StdConn{Conn: conn}, tlsConfig)
+						}
 					} else {
 						var ne net.Error
 						if ok := errors.As(err, &ne); ok && ne.Temporary() {
@@ -302,7 +323,11 @@ func (e *Engine) startListeners() error {
 				for {
 					conn, err := ln.Accept()
 					if err == nil {
-						e.AddConnNonTLS(conn)
+						if !e.UseStdConn {
+							e.AddConnNonTLS(conn)
+						} else {
+							e.AddStdConnNonTLS(conn)
+						}
 					} else {
 						var ne net.Error
 						if ok := errors.As(err, &ne); ok && ne.Temporary() {
@@ -339,6 +364,7 @@ func (e *Engine) Start() error {
 
 // Stop .
 func (e *Engine) Stop() {
+	e.runningStd = false
 	e.stopListeners()
 	e.Gopher.Stop()
 }
@@ -362,15 +388,18 @@ func (e *Engine) Shutdown(ctx context.Context) error {
 		e.Cancel()
 	}
 
-	chCloseQueue := make(chan *nbio.Conn, 1024)
+	chCloseQueue := make(chan net.Conn, 1024)
 	defer close(chCloseQueue)
 
 	go func() {
 		for c := range chCloseQueue {
-			c.Close()
+			if _, ok := c.(*nbio.Conn); ok {
+				c.Close()
+			}
 		}
 	}()
 
+	e.runningStd = false
 	timer := time.NewTimer(nextPollInterval())
 	defer timer.Stop()
 	for {
@@ -522,7 +551,7 @@ func (engine *Engine) AddConnNonTLS(c net.Conn) {
 	nbc.SetReadDeadline(time.Now().Add(engine.KeepaliveTime))
 }
 
-// AddConnTLS .
+//  AddConnTLS .
 func (engine *Engine) AddConnTLS(conn net.Conn, tlsConfig *tls.Config) {
 	nbc, err := nbio.NBConn(conn)
 	if err != nil {
@@ -555,6 +584,84 @@ func (engine *Engine) AddConnTLS(conn net.Conn, tlsConfig *tls.Config) {
 	nbc.OnData(engine.TLSDataHandler)
 	engine.AddConn(nbc)
 	nbc.SetReadDeadline(time.Now().Add(engine.KeepaliveTime))
+}
+
+// AddStdConnNonTLS .
+func (engine *Engine) AddStdConnNonTLS(conn net.Conn) {
+	engine.mux.Lock()
+	if len(engine.conns) >= engine.MaxLoad {
+		engine.mux.Unlock()
+		conn.Close()
+		return
+	}
+	engine.conns[conn] = struct{}{}
+	engine.mux.Unlock()
+
+	processor := NewServerProcessor(conn, engine.Handler, engine.KeepaliveTime, !engine.DisableSendfile)
+	parser := NewParser(processor, false, engine.ReadLimit, func(f func()) { f() })
+	parser.Conn = conn
+	parser.Engine = engine
+	processor.(*ServerProcessor).parser = parser
+	engine._onOpen(conn)
+	conn.SetReadDeadline(time.Now().Add(engine.KeepaliveTime))
+	go engine.serveStdConn(&StdConn{Conn: conn}, parser)
+}
+
+// AddStdConnTLS .
+func (engine *Engine) AddStdConnTLS(conn net.Conn, tlsConfig *tls.Config) {
+	engine.mux.Lock()
+	if len(engine.conns) >= engine.MaxLoad {
+		engine.mux.Unlock()
+		conn.Close()
+		return
+	}
+	engine.conns[conn] = struct{}{}
+	engine.mux.Unlock()
+
+	tlsConn := tls.Server(conn, tlsConfig)
+	processor := NewServerProcessor(tlsConn, engine.Handler, engine.KeepaliveTime, !engine.DisableSendfile)
+	parser := NewParser(processor, false, engine.ReadLimit, func(f func()) { f() })
+	parser.Conn = tlsConn
+	parser.Engine = engine
+	processor.(*ServerProcessor).parser = parser
+	engine._onOpen(conn)
+	conn.SetReadDeadline(time.Now().Add(engine.KeepaliveTime))
+	go engine.serveStdConn(&StdConn{Conn: tlsConn}, parser)
+}
+
+func (engine *Engine) serveStdConn(conn *StdConn, parser *Parser) {
+	defer func() {
+		if err := recover(); err != nil {
+			const size = 64 << 10
+			buf := make([]byte, size)
+			buf = buf[:runtime.Stack(buf, false)]
+			logging.Error("serveStdConn failed: %v\n%v\n", err, *(*string)(unsafe.Pointer(&buf)))
+		}
+	}()
+
+	var (
+		n   int
+		err error
+		buf = mempool.Malloc(engine.ReadBufferSize)
+	)
+	defer func() {
+		mempool.Free(buf)
+		engine._onClose(conn, err)
+	}()
+	for engine.runningStd {
+		conn.handling = false
+		n, err = conn.Read(buf)
+		conn.handling = true
+		if err != nil {
+			conn.Close()
+			return
+		}
+		err = parser.Read(buf[:n])
+		if err != nil {
+			conn.Close()
+			return
+		}
+	}
 }
 
 // NewEngine .
@@ -654,14 +761,14 @@ func NewEngine(conf Config) *Engine {
 	engine := &Engine{
 		Gopher:                       g,
 		Config:                       &conf,
-		_onOpen:                      func(c *nbio.Conn) {},
-		_onClose:                     func(c *nbio.Conn, err error) {},
+		_onOpen:                      func(c net.Conn) {},
+		_onClose:                     func(c net.Conn, err error) {},
 		_onStop:                      func() {},
 		MaxLoad:                      conf.MaxLoad,
 		MaxWebsocketFramePayloadSize: conf.MaxWebsocketFramePayloadSize,
 		ReleaseWebsocketPayload:      conf.ReleaseWebsocketPayload,
 		CheckUtf8:                    utf8.Valid,
-		conns:                        map[*nbio.Conn]struct{}{},
+		conns:                        map[net.Conn]struct{}{},
 		ExecuteClient:                clientExecutor,
 
 		emptyRequest: (&http.Request{}).WithContext(baseCtx),
@@ -669,6 +776,8 @@ func NewEngine(conf Config) *Engine {
 		Cancel:       cancel,
 
 		BodyAllocator: conf.BodyAllocator,
+
+		runningStd: conf.UseStdConn,
 	}
 
 	shouldSupportTLS := !conf.SupportServerOnly || len(conf.AddrsTLS) > 0
