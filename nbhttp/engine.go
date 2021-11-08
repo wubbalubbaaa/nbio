@@ -358,8 +358,9 @@ func (e *Engine) Start() error {
 	if err != nil {
 		return err
 	}
-
-	return e.Gopher.Start()
+	err = e.Gopher.Start()
+	logging.Info("Engine[UseStdConn: %v]", e.UseStdConn)
+	return err
 }
 
 // Stop .
