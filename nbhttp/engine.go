@@ -595,7 +595,8 @@ func (engine *Engine) AddStdConnNonTLS(conn net.Conn) {
 		conn.Close()
 		return
 	}
-	engine.conns[conn] = struct{}{}
+	stdConn := &StdConn{Conn: conn}
+	engine.conns[stdConn] = struct{}{}
 	engine.mux.Unlock()
 
 	processor := NewServerProcessor(conn, engine.Handler, engine.KeepaliveTime, !engine.DisableSendfile)
@@ -605,7 +606,7 @@ func (engine *Engine) AddStdConnNonTLS(conn net.Conn) {
 	processor.(*ServerProcessor).parser = parser
 	engine._onOpen(conn)
 	conn.SetReadDeadline(time.Now().Add(engine.KeepaliveTime))
-	go engine.serveStdConn(&StdConn{Conn: conn}, parser)
+	go engine.serveStdConn(stdConn, parser)
 }
 
 // AddStdConnTLS .
@@ -616,10 +617,10 @@ func (engine *Engine) AddStdConnTLS(conn net.Conn, tlsConfig *tls.Config) {
 		conn.Close()
 		return
 	}
-	engine.conns[conn] = struct{}{}
-	engine.mux.Unlock()
-
 	tlsConn := tls.Server(conn, tlsConfig)
+	stdConn := &StdConn{Conn: tlsConn}
+	engine.conns[stdConn] = struct{}{}
+	engine.mux.Unlock()
 	processor := NewServerProcessor(tlsConn, engine.Handler, engine.KeepaliveTime, !engine.DisableSendfile)
 	parser := NewParser(processor, false, engine.ReadLimit, func(f func()) { f() })
 	parser.Conn = tlsConn
@@ -627,7 +628,7 @@ func (engine *Engine) AddStdConnTLS(conn net.Conn, tlsConfig *tls.Config) {
 	processor.(*ServerProcessor).parser = parser
 	engine._onOpen(conn)
 	conn.SetReadDeadline(time.Now().Add(engine.KeepaliveTime))
-	go engine.serveStdConn(&StdConn{Conn: tlsConn}, parser)
+	go engine.serveStdConn(stdConn, parser)
 }
 
 func (engine *Engine) serveStdConn(conn *StdConn, parser *Parser) {
@@ -647,7 +648,12 @@ func (engine *Engine) serveStdConn(conn *StdConn, parser *Parser) {
 	)
 	defer func() {
 		mempool.Free(buf)
+
+		parser.Close(err)
 		engine._onClose(conn, err)
+		engine.mux.Lock()
+		delete(engine.conns, conn)
+		engine.mux.Unlock()
 	}()
 	for engine.runningStd {
 		conn.handling = false
