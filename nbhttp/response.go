@@ -101,6 +101,7 @@ func (res *Response) Write(data []byte) (int, error) {
 	res.WriteHeader(http.StatusOK)
 
 	res.hasBody = true
+	useStdConn := res.parser.Engine.UseStdConn
 
 	if res.chunked {
 		res.eoncodeHead()
@@ -119,6 +120,9 @@ func (res *Response) Write(data []byte) (int, error) {
 			return l, nil
 		}
 		_, err := conn.Write(buf)
+		if useStdConn {
+			mempool.Free(buf)
+		}
 		if err != nil {
 			return 0, err
 		}
@@ -131,7 +135,11 @@ func (res *Response) Write(data []byte) (int, error) {
 			res.buffer = buf
 			return l, nil
 		}
-		return conn.Write(buf)
+		n, err := conn.Write(buf)
+		if useStdConn {
+			mempool.Free(buf)
+		}
+		return n, err
 	}
 
 	if len(res.header[contentLengthHeader]) > 0 {
@@ -143,7 +151,11 @@ func (res *Response) Write(data []byte) (int, error) {
 			buf = mempool.Malloc(l)[0:0]
 		}
 		buf = append(buf, data...)
-		return conn.Write(buf)
+		n, err := conn.Write(buf)
+		if useStdConn {
+			mempool.Free(buf)
+		}
+		return n, err
 	}
 	if res.bodyBuffer == nil {
 		res.bodyBuffer = mempool.Malloc(l)[0:0]
@@ -164,6 +176,9 @@ func (res *Response) ReadFrom(r io.Reader) (n int64, err error) {
 	res.hasBody = true
 	res.eoncodeHead()
 	_, err = c.Write(res.buffer)
+	if res.parser.Engine.UseStdConn {
+		mempool.Free(res.buffer)
+	}
 	res.buffer = nil
 	if err != nil {
 		return 0, err
@@ -315,6 +330,7 @@ func (res *Response) eoncodeHead() {
 
 func (res *Response) flushTrailer(conn io.Writer) error {
 	var err error
+	var useStdConn = res.parser.Engine.UseStdConn
 
 	if !res.chunked {
 		if res.buffer != nil {
@@ -324,6 +340,9 @@ func (res *Response) flushTrailer(conn io.Writer) error {
 				res.bodyBuffer = nil
 			}
 			_, err = conn.Write(res.buffer)
+			if useStdConn {
+				mempool.Free(res.buffer)
+			}
 			res.buffer = nil
 			if err != nil {
 				return err
@@ -331,6 +350,9 @@ func (res *Response) flushTrailer(conn io.Writer) error {
 		}
 		if res.bodyBuffer != nil {
 			_, err = conn.Write(res.bodyBuffer)
+			if useStdConn {
+				mempool.Free(res.buffer)
+			}
 			res.bodyBuffer = nil
 		}
 
@@ -355,6 +377,9 @@ func (res *Response) flushTrailer(conn io.Writer) error {
 		data = append(data, "\r\n"...)
 	}
 	_, err = conn.Write(data)
+	if useStdConn {
+		mempool.Free(data)
+	}
 	return err
 }
 
