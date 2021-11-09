@@ -224,20 +224,28 @@ func (u *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request, responseHeade
 		return nil, u.returnError(w, r, http.StatusInternalServerError, err)
 	}
 
-	nbc, ok := conn.(*nbio.Conn)
-	if !ok {
-		tlsConn, tlsOk := conn.(*tls.Conn)
-		if !tlsOk {
+	var parser *nbhttp.Parser
+	switch v := conn.(type) {
+	case *nbio.Conn:
+		parser, ok = v.Session().(*nbhttp.Parser)
+		if !ok {
 			return nil, u.returnError(w, r, http.StatusInternalServerError, err)
 		}
-		nbc, tlsOk = tlsConn.Conn().(*nbio.Conn)
-		if !tlsOk {
+	case *tls.Conn:
+		nbc, ok := v.Conn().(*nbio.Conn)
+		if !ok {
 			return nil, u.returnError(w, r, http.StatusInternalServerError, err)
 		}
-	}
-
-	parser, ok := nbc.Session().(*nbhttp.Parser)
-	if !ok {
+		parser, ok = nbc.Session().(*nbhttp.Parser)
+		if !ok {
+			return nil, u.returnError(w, r, http.StatusInternalServerError, err)
+		}
+	case *nbhttp.StdConn:
+		parser = conn.(*nbhttp.StdConn).Parser
+		if parser == nil {
+			return nil, u.returnError(w, r, http.StatusInternalServerError, err)
+		}
+	default:
 		return nil, u.returnError(w, r, http.StatusInternalServerError, err)
 	}
 

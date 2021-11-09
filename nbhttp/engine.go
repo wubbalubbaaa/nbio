@@ -158,6 +158,7 @@ type Config struct {
 
 type StdConn struct {
 	net.Conn
+	Parser   *Parser
 	handling bool
 }
 
@@ -599,12 +600,13 @@ func (engine *Engine) AddStdConnNonTLS(conn net.Conn) {
 	engine.conns[stdConn] = struct{}{}
 	engine.mux.Unlock()
 
-	processor := NewServerProcessor(conn, engine.Handler, engine.KeepaliveTime, !engine.DisableSendfile)
+	processor := NewServerProcessor(stdConn, engine.Handler, engine.KeepaliveTime, !engine.DisableSendfile)
 	parser := NewParser(processor, false, engine.ReadLimit, func(f func()) { f() })
-	parser.Conn = conn
+	parser.Conn = stdConn
 	parser.Engine = engine
+	stdConn.Parser = parser
 	processor.(*ServerProcessor).parser = parser
-	engine._onOpen(conn)
+	engine._onOpen(stdConn)
 	conn.SetReadDeadline(time.Now().Add(engine.KeepaliveTime))
 	go engine.serveStdConn(stdConn, parser)
 }
@@ -617,16 +619,19 @@ func (engine *Engine) AddStdConnTLS(conn net.Conn, tlsConfig *tls.Config) {
 		conn.Close()
 		return
 	}
-	tlsConn := tls.Server(conn, tlsConfig)
+	isClient := false
+	isNonBlock := false
+	tlsConn := tls.NewConn(conn, tlsConfig, isClient, isNonBlock, engine.TLSAllocator)
 	stdConn := &StdConn{Conn: tlsConn}
 	engine.conns[stdConn] = struct{}{}
 	engine.mux.Unlock()
-	processor := NewServerProcessor(tlsConn, engine.Handler, engine.KeepaliveTime, !engine.DisableSendfile)
+	processor := NewServerProcessor(stdConn, engine.Handler, engine.KeepaliveTime, !engine.DisableSendfile)
 	parser := NewParser(processor, false, engine.ReadLimit, func(f func()) { f() })
-	parser.Conn = tlsConn
+	parser.Conn = stdConn
 	parser.Engine = engine
+	stdConn.Parser = parser
 	processor.(*ServerProcessor).parser = parser
-	engine._onOpen(conn)
+	engine._onOpen(stdConn)
 	conn.SetReadDeadline(time.Now().Add(engine.KeepaliveTime))
 	go engine.serveStdConn(stdConn, parser)
 }
