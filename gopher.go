@@ -232,7 +232,7 @@ func (g *Gopher) OnWriteBufferRelease(h func(c *Conn, b []byte)) {
 }
 
 // BeforeRead registers callback before syscall.Read
-// the handler would be called on windows.
+// the handler would be called only on windows.
 func (g *Gopher) BeforeRead(h func(c *Conn)) {
 	if h == nil {
 		panic("invalid nil handler")
@@ -241,7 +241,7 @@ func (g *Gopher) BeforeRead(h func(c *Conn)) {
 }
 
 // AfterRead registers callback after syscall.Read
-// the handler would be called on *nix.
+// the handler would be called only on *nix.
 func (g *Gopher) AfterRead(h func(c *Conn)) {
 	if h == nil {
 		panic("invalid nil handler")
@@ -250,7 +250,6 @@ func (g *Gopher) AfterRead(h func(c *Conn)) {
 }
 
 // BeforeWrite registers callback befor syscall.Write and syscall.Writev
-// the handler would be called on windows.
 func (g *Gopher) BeforeWrite(h func(c *Conn)) {
 	if h == nil {
 		panic("invalid nil handler")

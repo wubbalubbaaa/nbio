@@ -270,23 +270,23 @@ g.OnWriteBufferFree(func(c *Conn, b []byte) {
 ```golang
 // BeforeRead registers callback before syscall.Read
 // the handler would be called only on windows
-g.OnData(func(c *Conn, data []byte) {
-    c.SetReadDeadline(time.Now().Add(time.Second*30))
+g.BeforeRead(func(c *Conn, data []byte) {
+    // ...
 })
 ```
 ### Handle Conn After Read
 ```golang
 // AfterRead registers callback after syscall.Read
 // the handler would be called only on *nix
-g.BeforeRead(func(c *Conn) {
-    c.SetReadDeadline(time.Now().Add(time.Second*30))
+g.AfterRead(func(c *Conn) {
+    // ...
 })
 ```
 
 ### Handle Conn Before Write
 ```golang
-g.OnData(func(c *Conn, data []byte) {
-    c.SetWriteDeadline(time.Now().Add(time.Second*5))
+g.BeforeWrite(func(c *Conn, data []byte) {
+    // ...
 })
 ```
 
